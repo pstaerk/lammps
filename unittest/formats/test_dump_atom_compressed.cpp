@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -20,13 +20,11 @@
 
 #include <string>
 
-
 using ::testing::Eq;
 
 class DumpAtomCompressTest : public CompressedDumpTest {
 public:
-    DumpAtomCompressTest() : CompressedDumpTest("atom") {
-    }
+    DumpAtomCompressTest() : CompressedDumpTest("atom") {}
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -40,8 +38,9 @@ TEST_F(DumpAtomCompressTest, compressed_run0)
     auto text_file       = text_dump_filename("run0.melt");
     auto compressed_file = compressed_dump_filename("run0.melt");
 
-    if(compression_style == "atom/zstd") {
-        generate_text_and_compressed_dump(text_file, compressed_file, "", "", "", "checksum yes", 0);
+    if (compression_style == "atom/zstd") {
+        generate_text_and_compressed_dump(text_file, compressed_file, "", "", "", "checksum yes",
+                                          0);
     } else {
         generate_text_and_compressed_dump(text_file, compressed_file, "", "", 0);
     }
@@ -54,6 +53,35 @@ TEST_F(DumpAtomCompressTest, compressed_run0)
     auto converted_file = convert_compressed_to_text(compressed_file);
 
     ASSERT_THAT(converted_file, Eq(converted_dump_filename("run0.melt")));
+    ASSERT_FILE_EXISTS(converted_file);
+    ASSERT_FILE_EQUAL(text_file, converted_file);
+    delete_file(text_file);
+    delete_file(compressed_file);
+    delete_file(converted_file);
+}
+
+TEST_F(DumpAtomCompressTest, compressed_no_buffer_run0)
+{
+    if (!COMPRESS_BINARY) GTEST_SKIP();
+
+    auto text_file       = text_dump_filename("no_buffer_run0.melt");
+    auto compressed_file = compressed_dump_filename("no_buffer_run0.melt");
+
+    if (compression_style == "atom/zstd") {
+        generate_text_and_compressed_dump(text_file, compressed_file, "", "", "buffer no",
+                                          "buffer no checksum yes", 0);
+    } else {
+        generate_text_and_compressed_dump(text_file, compressed_file, "", "buffer no", 0);
+    }
+
+    TearDown();
+
+    ASSERT_FILE_EXISTS(text_file);
+    ASSERT_FILE_EXISTS(compressed_file);
+
+    auto converted_file = convert_compressed_to_text(compressed_file);
+
+    ASSERT_THAT(converted_file, Eq(converted_dump_filename("no_buffer_run0.melt")));
     ASSERT_FILE_EXISTS(converted_file);
     ASSERT_FILE_EQUAL(text_file, converted_file);
     delete_file(text_file);
@@ -75,7 +103,7 @@ TEST_F(DumpAtomCompressTest, compressed_multi_file_run1)
     auto compressed_file_0 = compressed_dump_filename(base_name_0);
     auto compressed_file_1 = compressed_dump_filename(base_name_1);
 
-    if(compression_style == "atom/zstd") {
+    if (compression_style == "atom/zstd") {
         generate_text_and_compressed_dump(text_file, compressed_file, "", "", "", "checksum no", 1);
     } else {
         generate_text_and_compressed_dump(text_file, compressed_file, "", "", 1);
@@ -341,12 +369,13 @@ TEST_F(DumpAtomCompressTest, compressed_modify_bad_param)
     if (compression_style != "atom/gz") GTEST_SKIP();
 
     BEGIN_HIDE_OUTPUT();
-    command(fmt::format("dump id1 all {} 1 {}", compression_style, compressed_dump_filename("modify_bad_param_run0_*.melt")));
+    command(fmt::format("dump id1 all {} 1 {}", compression_style,
+                        compressed_dump_filename("modify_bad_param_run0_*.melt")));
     END_HIDE_OUTPUT();
 
-    TEST_FAILURE(".*ERROR: Illegal dump_modify command: compression level must in the range of.*",
-        command("dump_modify id1 compression_level 12");
-    );
+    TEST_FAILURE(
+        ".*ERROR on proc 0: Illegal dump_modify command: Compression level must in the range of.*",
+        command("dump_modify id1 compression_level 12"););
 }
 
 TEST_F(DumpAtomCompressTest, compressed_modify_multi_bad_param)
@@ -354,12 +383,13 @@ TEST_F(DumpAtomCompressTest, compressed_modify_multi_bad_param)
     if (compression_style != "atom/gz") GTEST_SKIP();
 
     BEGIN_HIDE_OUTPUT();
-    command(fmt::format("dump id1 all {} 1 {}", compression_style, compressed_dump_filename("modify_multi_bad_param_run0_*.melt")));
+    command(fmt::format("dump id1 all {} 1 {}", compression_style,
+                        compressed_dump_filename("modify_multi_bad_param_run0_*.melt")));
     END_HIDE_OUTPUT();
 
-    TEST_FAILURE(".*ERROR: Illegal dump_modify command: compression level must in the range of.*",
-        command("dump_modify id1 pad 3 compression_level 12");
-    );
+    TEST_FAILURE(
+        ".*ERROR on proc 0: Illegal dump_modify command: Compression level must in the range of.*",
+        command("dump_modify id1 pad 3 compression_level 12"););
 }
 
 TEST_F(DumpAtomCompressTest, compressed_modify_clevel_run0)
@@ -370,7 +400,8 @@ TEST_F(DumpAtomCompressTest, compressed_modify_clevel_run0)
     auto text_file       = text_dump_filename(base_name);
     auto compressed_file = compressed_dump_filename(base_name);
 
-    generate_text_and_compressed_dump(text_file, compressed_file, "", "", "", "compression_level 3", 0);
+    generate_text_and_compressed_dump(text_file, compressed_file, "", "", "", "compression_level 3",
+                                      0);
 
     TearDown();
 

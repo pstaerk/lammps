@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -22,9 +22,9 @@
 #include "region.h"
 #include "variable.h"
 
+#include "../testing/core.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "../testing/core.h"
 
 #include <cstring>
 #include <vector>
@@ -40,7 +40,6 @@ using ::testing::ExitedWithCode;
 using ::testing::MatchesRegex;
 using ::testing::StrEq;
 
-
 class VariableTest : public LAMMPSTest {
 protected:
     Group *group;
@@ -50,7 +49,7 @@ protected:
     void SetUp() override
     {
         testbinary = "VariableTest";
-        args = {"-log", "none", "-echo", "screen", "-nocite", "-v",   "num",  "1"};
+        args       = {"-log", "none", "-echo", "screen", "-nocite", "-v", "num", "1"};
         LAMMPSTest::SetUp();
         group    = lmp->group;
         domain   = lmp->domain;
@@ -105,8 +104,8 @@ protected:
               "# comments only\n	five\n#END\n",
               fp);
         fclose(fp);
-        fp = fopen("test_variable.atomfile", "w");
 
+        fp = fopen("test_variable.atomfile", "w");
         fputs("# test file for atomfile style variable\n\n"
               "4  # four lines\n4 0.5   #with comment\n"
               "2 -0.5         \n3 1.5\n1 -1.5\n\n"
@@ -122,6 +121,8 @@ TEST_F(VariableTest, CreateDelete)
     file_vars();
     ASSERT_EQ(variable->nvar, 1);
     BEGIN_HIDE_OUTPUT();
+    command("shell putenv TEST_VARIABLE=simpletest2");
+    command("shell putenv TEST_VARIABLE2=simpletest OTHER_VARIABLE=2");
     command("variable one    index     1 2 3 4");
     command("variable two    equal     1");
     command("variable two    equal     2");
@@ -133,8 +134,8 @@ TEST_F(VariableTest, CreateDelete)
     command("variable five2  loop      10 200 pad");
     command("variable six    world     one");
     command("variable seven  format    two \"%5.2f\"");
-    command("variable eight  getenv    PWD");
-    command("variable eight  getenv    XXXXX");
+    command("variable eight  getenv    TEST_VARIABLE2");
+    command("variable eight  getenv    XXX");
     command("variable nine   file      test_variable.file");
     command("variable ten    internal  1.0");
     command("variable ten    internal  10.0");
@@ -160,12 +161,20 @@ TEST_F(VariableTest, CreateDelete)
     variable->internal_set(variable->find("ten"), 2.5);
     ASSERT_THAT(variable->retrieve("ten"), StrEq("2.5"));
     ASSERT_THAT(variable->retrieve("file"), StrEq("0"));
-    FILE *fp = fopen("MYFILE","w");
-    fputs(" ",fp);
+    FILE *fp = fopen("MYFILE", "w");
+    fputs(" ", fp);
     fclose(fp);
     ASSERT_THAT(variable->retrieve("file"), StrEq("1"));
     unlink("MYFILE");
     ASSERT_THAT(variable->retrieve("file"), StrEq("0"));
+
+    BEGIN_HIDE_OUTPUT();
+    command("variable seven delete");
+    command("variable seven getenv TEST_VARIABLE");
+    command("variable eight getenv OTHER_VARIABLE");
+    END_HIDE_OUTPUT();
+    ASSERT_THAT(variable->retrieve("seven"), StrEq("simpletest2"));
+    ASSERT_THAT(variable->retrieve("eight"), StrEq("2"));
 
     ASSERT_EQ(variable->equalstyle(variable->find("one")), 0);
     ASSERT_EQ(variable->equalstyle(variable->find("two")), 1);
@@ -208,7 +217,9 @@ TEST_F(VariableTest, CreateDelete)
 
 TEST_F(VariableTest, AtomicSystem)
 {
-    HIDE_OUTPUT([&] { command("atom_modify map array"); });
+    HIDE_OUTPUT([&] {
+        command("atom_modify map array");
+    });
     atomic_system();
     file_vars();
 
@@ -433,7 +444,7 @@ TEST_F(VariableTest, IfCommand)
     BEGIN_CAPTURE_OUTPUT();
     command("if x!=x|^a!=b then 'print \"bingo!\"'");
     text = END_CAPTURE_OUTPUT();
-    
+
     ASSERT_THAT(text, MatchesRegex(".*bingo!.*"));
 
     TEST_FAILURE(".*ERROR: Invalid Boolean syntax in if command.*",

@@ -1,6 +1,7 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -16,7 +17,6 @@
 #include "atom.h"
 #include "comm.h"
 #include "compute.h"
-#include "compute_temp.h"
 #include "domain.h"
 #include "error.h"
 #include "fix.h"
@@ -42,7 +42,7 @@ enum{NONE,CONSTANT,EQUAL,ATOM};
 
 /* ---------------------------------------------------------------------- */
 
-Velocity::Velocity(LAMMPS *lmp) : Pointers(lmp) {}
+Velocity::Velocity(LAMMPS *lmp) : Command(lmp) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -108,7 +108,7 @@ void Velocity::command(int narg, char **arg)
 
   int initcomm = 0;
   if (style == ZERO && rfix >= 0 &&
-      utils::strmatch(modify->fix[rfix]->style,"^rigid/small")) initcomm = 1;
+      utils::strmatch(modify->fix[rfix]->style,"^rigid.*/small.*")) initcomm = 1;
   if ((style == CREATE || style == SET) && temperature &&
       strcmp(temperature->style,"temp/cs") == 0) initcomm = 1;
 
@@ -186,15 +186,11 @@ void Velocity::create(double t_desired, int seed)
   Compute *temperature_nobias = nullptr;
 
   if (temperature == nullptr || bias_flag) {
-    char **arg = new char*[3];
-    arg[0] = (char *) "velocity_temp";
-    arg[1] = group->names[igroup];
-    arg[2] = (char *) "temp";
+    auto newcompute = modify->add_compute(fmt::format("velocity_temp {} temp",group->names[igroup]));
     if (temperature == nullptr) {
-      temperature = new ComputeTemp(lmp,3,arg);
+      temperature = newcompute;
       tcreate_flag = 1;
-    } else temperature_nobias = new ComputeTemp(lmp,3,arg);
-    delete [] arg;
+    } else temperature_nobias = newcompute;
   }
 
   // initialize temperature computation(s)
@@ -401,8 +397,8 @@ void Velocity::create(double t_desired, int seed)
   // if temperature compute was created, delete it
 
   delete random;
-  if (tcreate_flag) delete temperature;
-  if (temperature_nobias) delete temperature_nobias;
+  if (tcreate_flag) modify->delete_compute("velocity_temp");
+  if (temperature_nobias) modify->delete_compute("velocity_temp");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -578,13 +574,8 @@ void Velocity::scale(int /*narg*/, char **arg)
 
   int tflag = 0;
   if (temperature == nullptr) {
-    char **arg = new char*[3];
-    arg[0] = (char *) "velocity_temp";
-    arg[1] = group->names[igroup];
-    arg[2] = (char *) "temp";
-    temperature = new ComputeTemp(lmp,3,arg);
+    temperature = modify->add_compute(fmt::format("velocity_temp {} temp",group->names[igroup]));
     tflag = 1;
-    delete [] arg;
   }
 
   // initialize temperature computation
@@ -612,7 +603,7 @@ void Velocity::scale(int /*narg*/, char **arg)
 
   // if temperature was created, delete it
 
-  if (tflag) delete temperature;
+  if (tflag) modify->delete_compute("velocity_temp");
 }
 
 /* ----------------------------------------------------------------------
@@ -856,15 +847,11 @@ void Velocity::options(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"temp") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal velocity command");
-      int icompute;
-      for (icompute = 0; icompute < modify->ncompute; icompute++)
-        if (strcmp(arg[iarg+1],modify->compute[icompute]->id) == 0) break;
-      if (icompute == modify->ncompute)
-        error->all(FLERR,"Could not find velocity temperature ID");
+      int icompute = modify->find_compute(arg[iarg+1]);
+      if (icompute < 0) error->all(FLERR,"Could not find velocity temperature ID");
       temperature = modify->compute[icompute];
       if (temperature->tempflag == 0)
-        error->all(FLERR,
-                   "Velocity temperature ID does not compute temperature");
+        error->all(FLERR,"Velocity temperature ID does not compute temperature");
       iarg += 2;
     } else if (strcmp(arg[iarg],"bias") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal velocity command");

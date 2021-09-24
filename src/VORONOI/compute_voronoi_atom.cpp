@@ -1,6 +1,7 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -17,9 +18,6 @@
 
 #include "compute_voronoi_atom.h"
 
-#include <cmath>
-#include <cstring>
-#include <voro++.hh>
 #include "atom.h"
 #include "group.h"
 #include "update.h"
@@ -29,9 +27,10 @@
 #include "comm.h"
 #include "variable.h"
 #include "input.h"
-#include "force.h"
 
-#include <vector>
+#include <cmath>
+#include <cstring>
+#include <voro++.hh>
 
 using namespace LAMMPS_NS;
 using namespace voro;

@@ -1,6 +1,7 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -52,7 +53,7 @@ enum{NONE,RATIO,SUBSET};
 
 /* ---------------------------------------------------------------------- */
 
-CreateAtoms::CreateAtoms(LAMMPS *lmp) : Pointers(lmp), basistype(nullptr) {}
+CreateAtoms::CreateAtoms(LAMMPS *lmp) : Command(lmp), basistype(nullptr) {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -175,28 +176,20 @@ void CreateAtoms::command(int narg, char **arg)
     } else if (strcmp(arg[iarg],"var") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal create_atoms command");
       delete [] vstr;
-      int n = strlen(arg[iarg+1]) + 1;
-      vstr = new char[n];
-      strcpy(vstr,arg[iarg+1]);
+      vstr = utils::strdup(arg[iarg+1]);
       varflag = 1;
       iarg += 2;
     } else if (strcmp(arg[iarg],"set") == 0) {
       if (iarg+3 > narg) error->all(FLERR,"Illegal create_atoms command");
       if (strcmp(arg[iarg+1],"x") == 0) {
         delete [] xstr;
-        int n = strlen(arg[iarg+2]) + 1;
-        xstr = new char[n];
-        strcpy(xstr,arg[iarg+2]);
+        xstr = utils::strdup(arg[iarg+2]);
       } else if (strcmp(arg[iarg+1],"y") == 0) {
         delete [] ystr;
-        int n = strlen(arg[iarg+2]) + 1;
-        ystr = new char[n];
-        strcpy(ystr,arg[iarg+2]);
+        ystr = utils::strdup(arg[iarg+2]);
       } else if (strcmp(arg[iarg+1],"z") == 0) {
         delete [] zstr;
-        int n = strlen(arg[iarg+2]) + 1;
-        zstr = new char[n];
-        strcpy(zstr,arg[iarg+2]);
+        zstr = utils::strdup(arg[iarg+2]);
       } else error->all(FLERR,"Illegal create_atoms command");
       iarg += 3;
     } else if (strcmp(arg[iarg],"rotate") == 0) {
@@ -595,11 +588,13 @@ void CreateAtoms::command(int narg, char **arg)
   // print status
 
   MPI_Barrier(world);
-  if (me == 0)
-    utils::logmesg(lmp, fmt::format("Created {} atoms\n"
-                        "  create_atoms CPU = {:.3f} seconds\n",
-                        atom->natoms - natoms_previous,
-                        MPI_Wtime() - time1));
+  if (me == 0) {
+    utils::logmesg(lmp,"Created {} atoms\n", atom->natoms - natoms_previous);
+    if (scaleflag) domain->print_box("  using lattice units in ");
+    else domain->print_box("  using box units in ");
+    utils::logmesg(lmp,"  create_atoms CPU = {:.3f} seconds\n",
+                   MPI_Wtime() - time1);
+  }
 }
 
 /* ----------------------------------------------------------------------

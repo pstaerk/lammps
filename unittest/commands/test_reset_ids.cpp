@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -11,6 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+#include "../testing/core.h"
 #include "atom.h"
 #include "fmt/format.h"
 #include "info.h"
@@ -21,7 +22,6 @@
 #include "utils.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "../testing/core.h"
 
 #include <cstdio>
 #include <mpi.h>
@@ -35,7 +35,6 @@ namespace LAMMPS_NS {
 using ::testing::MatchesRegex;
 
 #define GETIDX(i) lmp->atom->map(i)
-
 
 #define STRINGIFY(val) XSTR(val)
 #define XSTR(val) #val

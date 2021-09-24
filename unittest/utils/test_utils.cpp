@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -14,8 +14,11 @@
 #include "lmptype.h"
 #include "pointers.h"
 #include "utils.h"
+#include "tokenizer.h"
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+
 #include <cerrno>
 #include <cstdio>
 #include <string>
@@ -118,6 +121,44 @@ TEST(Utils, split_words_simple)
     ASSERT_THAT(list[0], StrEq("one"));
     ASSERT_THAT(list[1], StrEq("two"));
     ASSERT_THAT(list[2], StrEq("three"));
+}
+
+TEST(Utils, split_words_leading_whitespace)
+{
+    auto list = utils::split_words("  one two three");
+    ASSERT_EQ(list.size(), 3);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("two"));
+    ASSERT_THAT(list[2], StrEq("three"));
+}
+
+TEST(Utils, split_words_trailing_whitespace)
+{
+    auto list = utils::split_words("one two three  ");
+    ASSERT_EQ(list.size(), 3);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("two"));
+    ASSERT_THAT(list[2], StrEq("three"));
+}
+
+TEST(Utils, split_words_heredoc)
+{
+    auto list = utils::split_words("one two three \"\"\"");
+    ASSERT_EQ(list.size(), 4);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("two"));
+    ASSERT_THAT(list[2], StrEq("three"));
+    ASSERT_THAT(list[3], StrEq("\"\"\""));
+}
+
+TEST(Utils, split_words_heredoc_whitespace)
+{
+    auto list = utils::split_words("one two three \"\"\"   ");
+    ASSERT_EQ(list.size(), 4);
+    ASSERT_THAT(list[0], StrEq("one"));
+    ASSERT_THAT(list[1], StrEq("two"));
+    ASSERT_THAT(list[2], StrEq("three"));
+    ASSERT_THAT(list[3], StrEq("\"\"\""));
 }
 
 TEST(Utils, split_words_quoted)
@@ -331,6 +372,11 @@ TEST(Utils, valid_id7)
     ASSERT_TRUE(utils::is_id("___"));
 }
 
+TEST(Utils, empty_id)
+{
+    ASSERT_FALSE(utils::is_id(""));
+}
+
 TEST(Utils, invalid_id1)
 {
     ASSERT_FALSE(utils::is_id("+abc"));
@@ -435,6 +481,17 @@ TEST(Utils, strmatch_opt_char)
 {
     ASSERT_TRUE(utils::strmatch("rigid", "^r?igid"));
     ASSERT_TRUE(utils::strmatch("igid", "^r?igid"));
+    ASSERT_TRUE(utils::strmatch("c_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("f_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("v_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("i_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("d_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("i2_name", "^[cfvid]2?_name"));
+    ASSERT_TRUE(utils::strmatch("d2_name", "^[cfvid]2?_name"));
+    ASSERT_FALSE(utils::strmatch("d2name", "^[cfvid]2?_name"));
+    ASSERT_FALSE(utils::strmatch("i1_name", "^[cfvid]2?_name"));
+    ASSERT_FALSE(utils::strmatch("V_name", "^[cfvid]2?_name"));
+    ASSERT_FALSE(utils::strmatch("x_name", "^[cfvid]2?_name"));
 }
 
 TEST(Utils, strmatch_dot)
@@ -668,7 +725,7 @@ TEST(Utils, guesspath)
 {
     char buf[256];
     FILE *fp = fopen("test_guesspath.txt", "w");
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__) || defined(_WIN32)
     const char *path = utils::guesspath(buf, sizeof(buf), fp);
     ASSERT_THAT(path, EndsWith("test_guesspath.txt"));
 #else
@@ -780,6 +837,11 @@ TEST(Utils, unit_conversion)
     ASSERT_DOUBLE_EQ(factor, 1.0 / 23.060549);
 }
 
+TEST(Utils, timespec2seconds_off)
+{
+    ASSERT_DOUBLE_EQ(utils::timespec2seconds("off"), -1.0);
+}
+
 TEST(Utils, timespec2seconds_ss)
 {
     ASSERT_DOUBLE_EQ(utils::timespec2seconds("45"), 45.0);
@@ -793,6 +855,11 @@ TEST(Utils, timespec2seconds_mmss)
 TEST(Utils, timespec2seconds_hhmmss)
 {
     ASSERT_DOUBLE_EQ(utils::timespec2seconds("2:10:45"), 7845.0);
+}
+
+TEST(Utils, timespec2seconds_invalid)
+{
+    ASSERT_DOUBLE_EQ(utils::timespec2seconds("2:aa:45"), -1.0);
 }
 
 TEST(Utils, date2num)
@@ -809,4 +876,64 @@ TEST(Utils, date2num)
     ASSERT_EQ(utils::date2num("10October22 "), 20221010);
     ASSERT_EQ(utils::date2num("30November 02"), 20021130);
     ASSERT_EQ(utils::date2num("31December100"), 1001231);
+}
+
+TEST(Utils, current_date)
+{
+    auto vals = ValueTokenizer(utils::current_date(),"-");
+    int year = vals.next_int();
+    int month = vals.next_int();
+    int day = vals.next_int();
+    ASSERT_GT(year,2020);
+    ASSERT_GE(month,1);
+    ASSERT_GE(day,1);
+    ASSERT_LE(month,12);
+    ASSERT_LE(day,31);
+}
+
+TEST(Utils, binary_search)
+{
+    double data[] = {-2.0, -1.8, -1.0, -1.0, -1.0, -0.5, -0.2, 0.0, 0.1, 0.1,
+                     0.2,  0.3,  0.5,  0.5,  0.6,  0.7,  1.0,  1.2, 1.5, 2.0};
+    const int n   = sizeof(data) / sizeof(double);
+    ASSERT_EQ(utils::binary_search(-5.0, n, data), 0);
+    ASSERT_EQ(utils::binary_search(-2.0, n, data), 0);
+    ASSERT_EQ(utils::binary_search(-1.9, n, data), 0);
+    ASSERT_EQ(utils::binary_search(-1.0, n, data), 4);
+    ASSERT_EQ(utils::binary_search(0.0, n, data), 7);
+    ASSERT_EQ(utils::binary_search(0.1, n, data), 9);
+    ASSERT_EQ(utils::binary_search(0.4, n, data), 11);
+    ASSERT_EQ(utils::binary_search(1.1, n, data), 16);
+    ASSERT_EQ(utils::binary_search(1.5, n, data), 18);
+    ASSERT_EQ(utils::binary_search(2.0, n, data), 19);
+    ASSERT_EQ(utils::binary_search(2.5, n, data), 19);
+}
+
+static int compare(int a, int b, void *)
+{
+    if (a < b)
+        return -1;
+    else if (a > b)
+        return 1;
+    else
+        return 0;
+}
+
+TEST(Utils, merge_sort)
+{
+    int data[] = {773, 405, 490, 830, 632, 96,  428, 728, 912, 840, 878, 745, 213, 219, 249, 380,
+                  894, 758, 575, 690, 61,  849, 19,  577, 338, 569, 898, 873, 448, 940, 431, 780,
+                  472, 289, 65,  491, 641, 37,  367, 33,  407, 854, 594, 611, 845, 136, 107, 592,
+                  275, 865, 158, 626, 399, 703, 686, 734, 188, 559, 781, 558, 737, 281, 638, 664,
+                  533, 529, 62,  969, 595, 661, 837, 463, 624, 568, 615, 936, 206, 637, 91,  694,
+                  214, 872, 468, 66,  775, 949, 486, 576, 255, 961, 480, 138, 177, 509, 333, 705,
+                  10,  375, 321, 952, 210, 111, 475, 268, 708, 864, 244, 121, 988, 540, 942, 682,
+                  750, 473, 478, 714, 955, 911, 482, 384, 144, 757, 697, 791, 420, 605, 447, 320};
+
+    const int num = sizeof(data) / sizeof(int);
+    utils::merge_sort(data, num, nullptr, &compare);
+    bool sorted = true;
+    for (int i = 1; i < num; ++i)
+        if (data[i - 1] > data[i]) sorted = false;
+    ASSERT_TRUE(sorted);
 }

@@ -1,6 +1,7 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -219,7 +220,7 @@ int ComputeAngleLocal::compute_angles(int flag)
 
   Angle *angle = force->angle;
 
-  m = n = 0;
+  m = 0;
   for (atom2 = 0; atom2 < nlocal; atom2++) {
     if (!(mask[atom2] & groupbit)) continue;
 
@@ -291,7 +292,7 @@ int ComputeAngleLocal::compute_angles(int flag)
         if (tstr) input->variable->internal_set(tvar,theta);
       }
 
-      for (n = 0; n < nvalues; n++) {
+      for (int n = 0; n < nvalues; n++) {
         switch (bstyle[n]) {
         case THETA:
           ptr[n] = 180.0*theta/MY_PI;

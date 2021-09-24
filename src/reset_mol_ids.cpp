@@ -1,6 +1,7 @@
+// clang-format off
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   https://www.lammps.org/, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -32,7 +33,7 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ResetMolIDs::ResetMolIDs(LAMMPS *lmp) : Pointers(lmp) {
+ResetMolIDs::ResetMolIDs(LAMMPS *lmp) : Command(lmp) {
   cfa = nullptr;
   cca = nullptr;
 
@@ -88,7 +89,7 @@ void ResetMolIDs::command(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"offset") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal reset_mol_ids command");
-      offset = utils::tnumeric(FLERR,arg[iarg+1],1,lmp);
+      offset = utils::tnumeric(FLERR,arg[iarg+1],true,lmp);
       if (offset < -1) error->all(FLERR,"Illegal reset_mol_ids command");
       iarg += 2;
     } else error->all(FLERR,"Illegal reset_mol_ids command");
@@ -131,11 +132,11 @@ void ResetMolIDs::command(int narg, char **arg)
 
   if (comm->me == 0) {
     if (nchunk < 0)
-      utils::logmesg(lmp,fmt::format("  number of new molecule IDs = unknown\n"));
+      utils::logmesg(lmp,"  number of new molecule IDs = unknown\n");
     else
-      utils::logmesg(lmp,fmt::format("  number of new molecule IDs = {}\n",nchunk));
-    utils::logmesg(lmp,fmt::format("  reset_mol_ids CPU = {:.3f} seconds\n",
-                                   MPI_Wtime()-time1));
+      utils::logmesg(lmp,"  number of new molecule IDs = {}\n",nchunk);
+    utils::logmesg(lmp,"  reset_mol_ids CPU = {:.3f} seconds\n",
+                   MPI_Wtime()-time1);
   }
 }
 
