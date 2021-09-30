@@ -44,7 +44,8 @@ class FixGenConp : public Fix {
   int electrode_check(int);
   void cg();
   void inv();
-  void write_matrix();
+  void write_matrix(std::string);
+  void write_vector(std::string);
   void coul_cal(int, double *, int *);
 
  private:
@@ -62,11 +63,10 @@ class FixGenConp : public Fix {
   double tolerance;
 
   double rms(int, double, bigint, double);
-  double offdiag(const double, const double, const double, const double, const double, const double,
-                 const double &);
-  double b_component(const double &R_x, const double &R_y, const double &R_z,
-                                 const double &Q_i, const double &alpha, const double &eta,
-                                 const double &k_max);
+  double offdiag(const double&, const double&, const double&, const double&, const double&, const double&,
+                 const double, const double, const double, const double &);
+  double b_component(const double &R_x, const double &R_y, const double &R_z, const double &Q_i,
+                     const double &alpha, const double &eta, const double &k_max);
   double ion_sum(const double &R_x, const double &R_y, const double &R_z, double &alpha);
   void coeffs();
 

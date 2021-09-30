@@ -39,6 +39,7 @@
 #include "mpi.h"
 #include "neigh_list.h"
 #include "pair.h"
+#include <string>
 
 #define EWALD_F 1.12837917
 #define EWALD_P 0.3275911
@@ -198,11 +199,11 @@ void FixGenConp::setup(int vflag)
   kmax3d = 4 * kmax * kmax * kmax + 6 * kmax * kmax + 3 * kmax;
 
   // My calculation of ks
-  for (i = 0; i < kmax; ++i) {
+  for (i = 0; i <= kmax; ++i) {
     if (i <= kxmax) ks_x.push_back(i * unitk[0]);
   }
 
-  for (i = -kmax; i < kmax; ++i) {
+  for (i = -kmax; i <= kmax; ++i) {
     if (i <= kymax) ks_y.push_back(i * unitk[1]);
     if (i <= kzmax) ks_z.push_back(i * unitk[2]);
   }
@@ -256,7 +257,7 @@ void FixGenConp::setup(int vflag)
     for (i = 0; i < natoms + 1; i++) curr_id_to_electrode_id[i] = -1;
     if (minimizer == 0) { eleallq = new double[nr_electrode_atoms_all]; }
     if (a_matrix_f == 0) {
-      if (me == 0) outa = fopen("amatrix", "w");
+      /* if (me == 0) outa = fopen("amatrix", "w"); */
       a_cal();
     } else {
       a_read();
@@ -318,15 +319,20 @@ double FixGenConp::b_component(const double &R_x, const double &R_y, const doubl
 {
 
   double bvec_result = 0.;
+  double kR, sinkR, coskR, ksq;
   // First, calculate the kspace sums
   for (auto kx : ks_x) {
     for (auto ky : ks_y) {
       for (auto kz : ks_z) {
+        // Primed sum
+        if (kx == 0 && ky == 0 && kz == 0)
+          continue;
+
         // Skalar product of k and R:
-        double kR = R_x * kx + R_y * ky + R_z * kz;
-        double sinkR = sin(kR);
-        double coskR = cos(kR);
-        double ksq = kx * kx + ky * ky + kz * kz;
+        kR = R_x * kx + R_y * ky + R_z * kz;
+        sinkR = sin(kR);
+        coskR = cos(kR);
+        ksq = kx * kx + ky * ky + kz * kz;
 
         bvec_result +=
             (sinkR * sinkR * Q_i + coskR * coskR * Q_i) * exp(-.25 * ksq / (alpha * alpha)) / ksq;
@@ -465,6 +471,10 @@ void FixGenConp::b_cal()
     elei = curr_id_to_electrode_id[tagi];
     bbb_all[i] = bbb_buf[elei];
   }
+  // Upgrade runstage flag (because we do not call sincos)
+  runstage = 2;
+
+  write_vector("debug_b");
 }
 
 /*----------------------------------------------------------------------- */
@@ -524,26 +534,30 @@ void FixGenConp::a_read()
   }
 }
 
-double FixGenConp::offdiag(const double R_x, const double R_y, const double R_z, const double V,
-                           const double alpha, const double eta, const double &prefactor)
+double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double &R_zi,
+                           const double &R_xj, const double &R_yj, const double &R_zj,
+                           const double V, const double alpha, const double eta,
+                           const double &prefactor)
 {
 
   double offdiag_result = 0.;
-  double ksqr, Rnorm;
+  double ksqr;
+
+  double Rij = (R_xj - R_xi) * (R_yj - R_yi) * (R_zj - R_zi);
+  double Rnorm = sqrt(Rij);
 
   for (auto kx : ks_x) {
     // Find how to ignore the one summation in the middle
     for (auto ky : ks_y) {
       for (auto kz : ks_z) {
         // Skip the k = 0 part (primed sum)
-        if (kx == 0 || ky == 0 || kz == 0) continue;
+        if (kx == 0 && ky == 0 && kz == 0) continue;
 
         // Pre-calculations
         ksqr = kx * kx + ky * ky + kz * kz;
-        Rnorm = sqrt(R_x * R_x + R_y * R_y + R_z * R_z);
 
-        offdiag_result +=
-            exp(-.25 * ksqr / (alpha * alpha)) * cos(R_x * kx + R_y * ky + R_z * kz) / (ksqr);
+        offdiag_result += exp(-.25 * ksqr / (alpha * alpha)) *
+            cos((R_xj - R_xi) * kx + (R_yj - R_yi) * ky + (R_zj - R_zi) * kz) / (ksqr);
       }
     }
   }
@@ -551,15 +565,26 @@ double FixGenConp::offdiag(const double R_x, const double R_y, const double R_z,
   // Add the 8pi/V factor
   offdiag_result *= prefactor;
 
-  // Second Summand here
-  offdiag_result += (erfc(alpha * Rnorm) - erfc((1.0 / 2.0) * M_SQRT2 * eta * Rnorm)) / Rnorm;
+  // Second Summand here (only added if Rnorm is not 0, else would produce a nan)
+  // This is taken care by firstneigh in code by Wang
+  if (Rnorm != 0)
+    offdiag_result += (erfc(alpha * Rnorm) - erfc((0.5 * eta * Rnorm) / MY_SQRT2)) / Rnorm;
+
   return offdiag_result;
 }
 
-void FixGenConp::write_matrix()
+void FixGenConp::write_vector(const std::string file_name) {
+  FILE *outa = fopen(file_name.c_str(), "w");
+
+  for (int i = 0; i < nr_electrode_atoms_all; ++i) {
+    fprintf(outa, "%lf \n", bbb_all[i]);
+  }
+}
+
+void FixGenConp::write_matrix(const std::string file_name)
 {
   int idx;
-  FILE *outa = fopen("debug_matrix", "w");
+  FILE *outa = fopen(file_name.c_str(), "w");
 
   // Print the electrode ids
   for (int i = 0; i < nr_electrode_atoms_all; i++) {
@@ -653,19 +678,28 @@ void FixGenConp::a_cal()
   /* double alpha = 1 / g_ewald; */
   double alpha = g_ewald;
 
-  double diagonal_add = -M_SQRT2 * alpha + M_SQRT2 * eta / MY_PIS;
-  double xx, yy, zz;
+  double diagonal_add = -2. * alpha / MY_PIS + 2 * eta / (MY_PIS * MY_SQRT2);
+  double xxi, yyi, zzi, xxj, yyj,
+      zzj;    // Loop variables for the coordinates of the ith and jth atom
   // calculate the matrix entries, locally...
+
   for (i = 0; i < nr_electrode_atoms_all; ++i) {
+    // Access the coordinates of the i-th atom
+    xxi = global_position_list[i * 3];
+    yyi = global_position_list[i * 3 + 1];
+    zzi = global_position_list[i * 3 + 2];
+
     for (j = 0; j < nr_electrode_atoms_all; ++j) {
 
-      xx = global_position_list[(i * j + j) / 3], yy = global_position_list[(i * j + j) / 3 + 1],
-      zz = global_position_list[(i * j + j) / 3 + 2];
+      xxj = global_position_list[j * 3];
+      yyj = global_position_list[j * 3 + 1];
+      zzj = global_position_list[j * 3 + 2];
 
       // this should be the same as the idx1d in the original code.
       aaa_all[i * nr_electrode_atoms_all + j] =
-          offdiag(xx, yy, zz, volume, alpha, eta, eightPIOverV);
+          offdiag(xxi, yyi, zzi, xxj, yyj, zzj, volume, alpha, eta, eightPIOverV);
 
+      // For the diagonal elements (Kronecker delta):
       if (i == j) aaa_all[i * nr_electrode_atoms_all + j] += diagonal_add;
     }
   }
@@ -679,7 +713,7 @@ void FixGenConp::a_cal()
   Ktime2 = MPI_Wtime();
   Ktime += Ktime2 - Ktime1;
 
-  if (me == 0) write_matrix();
+  if (me == 0) write_matrix("debug_matrix");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -758,6 +792,8 @@ void FixGenConp::inv()
     for (int i = 0; i < nr_electrode_atoms_all * nr_electrode_atoms_all; ++i) {
       aaa_all[i] = inv(i);
     }
+
+    write_matrix("invert_debug");
 
     /* dgetrf_(&m, &n, aaa_all.data(), &lda, ipiv, &info); */
     /* infosum = info; */
