@@ -16,7 +16,7 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(conp,FixGenConp)
+FixStyle(genconp, FixGenConp)
 
 #else
 
@@ -44,47 +44,51 @@ class FixGenConp : public Fix {
   int electrode_check(int);
   void cg();
   void inv();
-  void coul_cal(int, double *,int *);
+  void write_matrix();
+  void coul_cal(int, double *, int *);
 
  private:
-  int me,runstage;
-  double Btime,Btime1,Btime2;
-  double Ctime,Ctime1,Ctime2;
-  double Ktime,Ktime1,Ktime2;
-  double cgtime,cgtime1,cgtime2;
-  FILE *outf,*outa,*a_matrix_fp;
+  int me, runstage;
+  double Btime, Btime1, Btime2;
+  double Ctime, Ctime1, Ctime2;
+  double Ktime, Ktime1, Ktime2;
+  double cgtime, cgtime1, cgtime2;
+  FILE *outf, *outa, *a_matrix_fp;
   int a_matrix_f;
   int minimizer;
-  double vL,vR;
-  int molidL,molidR;
+  double vL, vR;
+  int molidL, molidR;
   int maxiter;
   double tolerance;
 
-  double rms(int,double,bigint,double);
-  double offdiag(const double, const double, const double,
-               const double, const double, const double,
-               const double &)
+  double rms(int, double, bigint, double);
+  double offdiag(const double, const double, const double, const double, const double, const double,
+                 const double &);
+  double b_component(const double &R_x, const double &R_y, const double &R_z,
+                                 const double &Q_i, const double &alpha, const double &eta,
+                                 const double &k_max);
+  double ion_sum(const double &R_x, const double &R_y, const double &R_z, double &alpha);
   void coeffs();
 
   double unitk[3];
   double *ug;
-  double g_ewald,eta,gsqmx,volume,slab_volfactor;
-  int *kxvecs,*kyvecs,*kzvecs;
-  double ***cs,***sn,**csk,**snk;
-  int kmax,kmax3d,kmax_created,kcount;
-  int kxmax,kymax,kzmax;
-  double *sfacrl,*sfacrl_all,*sfacim,*sfacim_all;
+  double g_ewald, eta, gsqmx, volume, slab_volfactor;
+  int *kxvecs, *kyvecs, *kzvecs;
+  double ***cs, ***sn, **csk, **snk;
+  int kmax, kmax3d, kmax_created, kcount;
+  int kxmax, kymax, kzmax;
+  double *sfacrl, *sfacrl_all, *sfacim, *sfacim_all;
   int everynum;
-  int elenum,elenum_old,elenum_all;
+  int nr_electrode_atoms, nr_electrode_atoms_old, nr_electrode_atoms_all;
   double *eleallq;
-  double *aaa_all,*bbb_all;
-  int *tag2eleall,*eleall2tag,*curr_tag2eleall,*ele2tag;
+  std::vector<double> aaa_all, bbb_all;
+  int *id_to_electrode_id, *global_electrode_ids, *curr_id_to_electrode_id, *local_electrode_ids;
   std::vector<double> ks_x;
   std::vector<double> ks_y;
   std::vector<double> ks_z;
 };
 
-}
+}    // namespace LAMMPS_NS
 
 #endif
 #endif
