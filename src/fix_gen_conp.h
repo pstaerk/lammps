@@ -39,6 +39,7 @@ class FixGenConp : public Fix {
   void a_cal();
   void a_read();
   void b_cal();
+  void calc_struct_factors(const double &, const double &, const double &, double &, double &);
   void equation_solve();
   void update_charge();
   int electrode_check(int);
@@ -63,8 +64,8 @@ class FixGenConp : public Fix {
   double tolerance;
 
   double rms(int, double, bigint, double);
-  double offdiag(const double&, const double&, const double&, const double&, const double&, const double&,
-                 const double, const double, const double, const double &);
+  double offdiag(const double &, const double &, const double &, const double &, const double &,
+                 const double &, const double, const double, const double, const double &);
   double b_component(const double &R_x, const double &R_y, const double &R_z, const double &Q_i,
                      const double &alpha, const double &eta, const double &k_max);
   double ion_sum(const double &R_x, const double &R_y, const double &R_z, double &alpha);

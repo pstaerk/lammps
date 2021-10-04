@@ -312,30 +312,72 @@ int FixGenConp::electrode_check(int atomid)
     return 0;
 }
 
+void FixGenConp::calc_struct_factors(const double &k_x, const double &k_y, const double &k_z,
+                                     double &struct_fac_real, double &struct_fac_imag)
+{
+  // Calculate second sum over all atoms temporary variables needed in each
+  // iteration
+  int inum = force->pair->list->inum;
+  int *ilist = force->pair->list->ilist;
+  double **position = atom->x;
+  double *q = atom->q;
+
+  double r_x, r_y, r_z, kR;
+  int atom_index;
+
+  // Initialize the values
+  struct_fac_real = 0.;
+  struct_fac_imag = 0.;
+
+  // Loop over all atoms
+  for (int i = 0; i < inum; i++) {
+    atom_index = ilist[i];
+
+    // Ignore atoms if they are not part of the electrode
+    if (electrode_check(atom_index) || q[atom_index] == 0.) continue;
+
+    r_x = position[atom_index][0];
+    r_y = position[atom_index][1];
+    r_z = position[atom_index][2];
+    kR = k_x * r_x + k_y * r_y + k_z * r_z;
+
+    struct_fac_real += q[atom_index] * cos(kR);
+    struct_fac_imag += q[atom_index] * sin(kR);
+  }
+}
+
 /* ----------------------------------------------------------------------*/
 double FixGenConp::b_component(const double &R_x, const double &R_y, const double &R_z,
                                const double &Q_i, const double &alpha, const double &eta,
                                const double &kmax)
 {
 
+  // The structure factor should go over all the non-electrode atoms!
   double bvec_result = 0.;
+  double quarter_a_sq = -.25 / (alpha * alpha);
   double kR, sinkR, coskR, ksq;
+
+  // Imaginary and real structure factors
+  double struct_fac_real, struct_fac_imag;
+
   // First, calculate the kspace sums
   for (auto kx : ks_x) {
     for (auto ky : ks_y) {
       for (auto kz : ks_z) {
         // Primed sum
-        if (kx == 0 && ky == 0 && kz == 0)
-          continue;
+        if (kx == 0 && ky == 0 && kz == 0) continue;
+
+        calc_struct_factors(kx, ky, kz, struct_fac_real, struct_fac_imag);
 
         // Skalar product of k and R:
         kR = R_x * kx + R_y * ky + R_z * kz;
+
         sinkR = sin(kR);
         coskR = cos(kR);
         ksq = kx * kx + ky * ky + kz * kz;
 
         bvec_result +=
-            (sinkR * sinkR * Q_i + coskR * coskR * Q_i) * exp(-.25 * ksq / (alpha * alpha)) / ksq;
+            (sinkR * struct_fac_imag + coskR * struct_fac_real) * exp(quarter_a_sq * ksq) / ksq;
       }
     }
   }
@@ -380,12 +422,6 @@ double FixGenConp::ion_sum(const double &R_x, const double &R_y, const double &R
 
 void FixGenConp::b_cal()
 {
-  // TODO check slab correction
-  // Get all the system atoms positions (non-electrode)
-  /* std::vector<double> localIonPositions; */
-  /* localIonPositions.resize(atom->nlocal * 3); */
-  /* double **localIonPositions; */
-
   double **x = atom->x;
   double *q = atom->q;
   int *tag = atom->tag;
@@ -424,17 +460,30 @@ void FixGenConp::b_cal()
   double alpha = g_ewald;
   x = atom->x;
 
+  //slabcorrection and create ele tag list in current timestep
+  double slabcorrtmp = 0.0;
+  double slabcorrtmp_all = 0.0;
+  for (i = 0; i < nlocal; i++) {
+    if (electrode_check(i) == 0) { slabcorrtmp += 4 * q[i] * MY_PI * x[i][2] / volume; }
+  }
+  MPI_Allreduce(&slabcorrtmp, &slabcorrtmp_all, 1, MPI_DOUBLE, MPI_SUM, world);
+  j = 0;
+
   // Keep track of which parameter we want to write
-  int k = 0;
+  int l = 0;
   for (int i : electrode_ids) {
     R_x = x[i][0];
     R_y = x[i][1];
     R_z = x[i][2];
     Q_i = q[i];
 
-    local_b[k] += b_component(R_x, R_y, R_z, Q_i, alpha, eta, kmax);
-    local_b[k] += ion_sum(R_x, R_y, R_z, alpha);
-    k++;
+    local_b[l] += -4 * MY_PI / volume * b_component(R_x, R_y, R_z, Q_i, alpha, eta, kmax);
+
+    local_b[l] += ion_sum(R_x, R_y, R_z, alpha);
+
+    // slab correction:
+    local_b[l] += R_z * slabcorrtmp_all;
+    l++;
   }
 
   // TODO take care to introduce the slab correction for partially periodic
@@ -573,12 +622,11 @@ double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double 
   return offdiag_result;
 }
 
-void FixGenConp::write_vector(const std::string file_name) {
+void FixGenConp::write_vector(const std::string file_name)
+{
   FILE *outa = fopen(file_name.c_str(), "w");
 
-  for (int i = 0; i < nr_electrode_atoms_all; ++i) {
-    fprintf(outa, "%lf \n", bbb_all[i]);
-  }
+  for (int i = 0; i < nr_electrode_atoms_all; ++i) { fprintf(outa, "%lf \n", bbb_all[i]); }
 }
 
 void FixGenConp::write_matrix(const std::string file_name)
