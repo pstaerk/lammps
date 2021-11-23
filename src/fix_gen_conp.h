@@ -65,7 +65,7 @@ class FixGenConp : public Fix {
 
   double rms(int, double, bigint, double);
   double offdiag(const double &, const double &, const double &, const double &, const double &,
-                 const double &, const double, const double, const double, const double &);
+                 const double &, const double, const double, const double &);
   double b_component(const double &R_x, const double &R_y, const double &R_z, const double &Q_i,
                      const double &alpha, const double &eta, const double &k_max);
   double ion_sum(const double &R_x, const double &R_y, const double &R_z, double &alpha);

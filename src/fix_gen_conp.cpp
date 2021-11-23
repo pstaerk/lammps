@@ -11,7 +11,7 @@
 
 /* ----------------------------------------------------------------------
    Version: Sep/22/2014
-   Zhenxing Wang(KU)
+   adapted from Zhenxing Wang.
 ------------------------------------------------------------------------- */
 
 #include "fix_gen_conp.h"
@@ -148,6 +148,7 @@ void FixGenConp::init()
 void FixGenConp::setup(int vflag)
 {
   g_ewald = force->kspace->g_ewald;
+  std::cout << "g_ewald : " << g_ewald << std::endl;
   slab_volfactor = force->kspace->slab_volfactor;
   double accuracy = force->kspace->accuracy;
 
@@ -165,6 +166,8 @@ void FixGenConp::setup(int vflag)
   double zprd = domain->zprd;
   double zprd_slab = zprd * slab_volfactor;
   volume = xprd * yprd * zprd_slab;
+  std::cout << "(xprd, yprd, zprd_slab) " << xprd << ", " << yprd << ", " << zprd_slab << std::endl;
+  std::cout << "yprd: " << yprd << " volume " << volume << std::endl;
 
   unitk[0] = 2.0 * MY_PI / xprd;
   unitk[1] = 2.0 * MY_PI / yprd;
@@ -199,14 +202,17 @@ void FixGenConp::setup(int vflag)
   kmax3d = 4 * kmax * kmax * kmax + 6 * kmax * kmax + 3 * kmax;
 
   // My calculation of ks
-  for (i = 0; i <= kmax; ++i) {
-    if (i <= kxmax) ks_x.push_back(i * unitk[0]);
-  }
+  for (i = 0; i <= kxmax; ++i) { ks_x.push_back(i * unitk[0]); }
 
   for (i = -kmax; i <= kmax; ++i) {
-    if (i <= kymax) ks_y.push_back(i * unitk[1]);
+    std::cout << "i " << i << "kymax " << kymax << "i*unitk " << i * unitk[1] << std::endl;
+    if (i >= -kymax && i <= kymax) ks_y.push_back(i * unitk[1]);
     if (i <= kzmax) ks_z.push_back(i * unitk[2]);
   }
+
+  for (int i = 0; i <= kxmax; ++i) std::cout << "ks_x : " << ks_x[i] << std::endl;
+  for (int i = 0; i <= 2 * kymax; ++i) std::cout << "ks_y : " << ks_y[i] << std::endl;
+  for (int i = 0; i <= 2 * kzmax; ++i) std::cout << "ks_z : " << ks_z[i] << std::endl;
 
   kxvecs = new int[kmax3d];
   kyvecs = new int[kmax3d];
@@ -456,7 +462,7 @@ void FixGenConp::b_cal()
 
   // Then, calculate the kspace sum per electrode atom
   double R_x, R_y, R_z, Q_i;
-  /* double alpha = 1 / g_ewald; */
+
   double alpha = g_ewald;
   x = atom->x;
 
@@ -585,15 +591,17 @@ void FixGenConp::a_read()
 
 double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double &R_zi,
                            const double &R_xj, const double &R_yj, const double &R_zj,
-                           const double V, const double alpha, const double eta,
-                           const double &prefactor)
+                           const double alpha, const double eta, const double &prefactor)
 {
 
   double offdiag_result = 0.;
   double ksqr;
 
-  double Rij = (R_xj - R_xi) * (R_yj - R_yi) * (R_zj - R_zi);
-  double Rnorm = sqrt(Rij);
+  double Rij2 =
+      (R_xj - R_xi) * (R_xj - R_xi) + (R_yj - R_yi) * (R_yj - R_yi) + (R_zj - R_zi) * (R_zj - R_zi);
+  double Rnorm = sqrt(Rij2);
+
+  std::cout << "Rijsq" << Rij2 << std::endl;
 
   for (auto kx : ks_x) {
     // Find how to ignore the one summation in the middle
@@ -607,17 +615,21 @@ double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double 
 
         offdiag_result += exp(-.25 * ksqr / (alpha * alpha)) *
             cos((R_xj - R_xi) * kx + (R_yj - R_yi) * ky + (R_zj - R_zi) * kz) / (ksqr);
+        std::cout << "Offdiagonal for kx " << kx << " ky " << ky << " kz " << kz  << " is " << " offdiag " << offdiag_result << std::endl;
       }
     }
   }
 
   // Add the 8pi/V factor
   offdiag_result *= prefactor;
+  std::cout << "After multiplication with prefator: " << offdiag_result << " pref: " << prefactor << std::endl;
 
-  // Second Summand here (only added if Rnorm is not 0, else would produce a nan)
+  // Second Summand here
   // This is taken care by firstneigh in code by Wang
-  if (Rnorm != 0)
+  if (Rnorm > 1e-100 || Rnorm < -1e-100) {
     offdiag_result += (erfc(alpha * Rnorm) - erfc((0.5 * eta * Rnorm) / MY_SQRT2)) / Rnorm;
+  }
+  // Self interaction is already taken care of in the diagonal term
 
   return offdiag_result;
 }
@@ -722,11 +734,12 @@ void FixGenConp::a_cal()
                  nr_electrode_atoms_list2, displs2, MPI_DOUBLE, world);
 
   // Precalculate the constant parts
+  std::cout << "Volume is " << volume << std::endl;
   double eightPIOverV = 8 * MY_PI / volume;
   /* double alpha = 1 / g_ewald; */
   double alpha = g_ewald;
 
-  double diagonal_add = -2. * alpha / MY_PIS + 2 * eta / (MY_PIS * MY_SQRT2);
+  double diagonal_add = -2. * alpha / MY_PIS + MY_SQRT2 * eta / MY_PIS;
   double xxi, yyi, zzi, xxj, yyj,
       zzj;    // Loop variables for the coordinates of the ith and jth atom
   // calculate the matrix entries, locally...
@@ -739,16 +752,19 @@ void FixGenConp::a_cal()
 
     for (j = 0; j < nr_electrode_atoms_all; ++j) {
 
+      std::cout << "(i, j)" << i << ", " << j << std::endl;
+
       xxj = global_position_list[j * 3];
       yyj = global_position_list[j * 3 + 1];
       zzj = global_position_list[j * 3 + 2];
 
       // this should be the same as the idx1d in the original code.
       aaa_all[i * nr_electrode_atoms_all + j] =
-          offdiag(xxi, yyi, zzi, xxj, yyj, zzj, volume, alpha, eta, eightPIOverV);
+          offdiag(xxi, yyi, zzi, xxj, yyj, zzj, alpha, eta, eightPIOverV);
 
       // For the diagonal elements (Kronecker delta):
       if (i == j) aaa_all[i * nr_electrode_atoms_all + j] += diagonal_add;
+      std::cout << "---- Diagonal limit added:diagonal = " << diagonal_add << " aaa_all = " << aaa_all[i*nr_electrode_atoms_all +j] << std::endl;
     }
   }
 
