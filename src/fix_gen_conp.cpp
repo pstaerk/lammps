@@ -11,7 +11,7 @@
 
 /* ----------------------------------------------------------------------
    Version: Sep/22/2014
-   adapted from Zhenxing Wang.
+   Philipp Stärk, adapted from Zhenxing Wang.
 ------------------------------------------------------------------------- */
 
 #include "fix_gen_conp.h"
@@ -148,7 +148,7 @@ void FixGenConp::init()
 void FixGenConp::setup(int vflag)
 {
   g_ewald = force->kspace->g_ewald;
-  std::cout << "g_ewald : " << g_ewald << std::endl;
+  /* std::cout << "g_ewald : " << g_ewald << std::endl; */
   slab_volfactor = force->kspace->slab_volfactor;
   double accuracy = force->kspace->accuracy;
 
@@ -166,8 +166,8 @@ void FixGenConp::setup(int vflag)
   double zprd = domain->zprd;
   double zprd_slab = zprd * slab_volfactor;
   volume = xprd * yprd * zprd_slab;
-  std::cout << "(xprd, yprd, zprd_slab) " << xprd << ", " << yprd << ", " << zprd_slab << std::endl;
-  std::cout << "yprd: " << yprd << " volume " << volume << std::endl;
+  /* std::cout << "(xprd, yprd, zprd_slab) " << xprd << ", " << yprd << ", " << zprd_slab << std::endl; */
+  /* std::cout << "yprd: " << yprd << " volume " << volume << std::endl; */
 
   unitk[0] = 2.0 * MY_PI / xprd;
   unitk[1] = 2.0 * MY_PI / yprd;
@@ -205,14 +205,14 @@ void FixGenConp::setup(int vflag)
   for (i = 0; i <= kxmax; ++i) { ks_x.push_back(i * unitk[0]); }
 
   for (i = -kmax; i <= kmax; ++i) {
-    std::cout << "i " << i << "kymax " << kymax << "i*unitk " << i * unitk[1] << std::endl;
+    /* std::cout << "i " << i << "kymax " << kymax << "i*unitk " << i * unitk[1] << std::endl; */
     if (i >= -kymax && i <= kymax) ks_y.push_back(i * unitk[1]);
     if (i <= kzmax) ks_z.push_back(i * unitk[2]);
   }
 
-  for (int i = 0; i <= kxmax; ++i) std::cout << "ks_x : " << ks_x[i] << std::endl;
-  for (int i = 0; i <= 2 * kymax; ++i) std::cout << "ks_y : " << ks_y[i] << std::endl;
-  for (int i = 0; i <= 2 * kzmax; ++i) std::cout << "ks_z : " << ks_z[i] << std::endl;
+  /* for (int i = 0; i <= kxmax; ++i) std::cout << "ks_x : " << ks_x[i] << std::endl; */
+  /* for (int i = 0; i <= 2 * kymax; ++i) std::cout << "ks_y : " << ks_y[i] << std::endl; */
+  /* for (int i = 0; i <= 2 * kzmax; ++i) std::cout << "ks_z : " << ks_z[i] << std::endl; */
 
   kxvecs = new int[kmax3d];
   kyvecs = new int[kmax3d];
@@ -601,7 +601,7 @@ double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double 
       (R_xj - R_xi) * (R_xj - R_xi) + (R_yj - R_yi) * (R_yj - R_yi) + (R_zj - R_zi) * (R_zj - R_zi);
   double Rnorm = sqrt(Rij2);
 
-  std::cout << "Rijsq" << Rij2 << std::endl;
+  /* std::cout << "Rijsq" << Rij2 << std::endl; */
 
   for (auto kx : ks_x) {
     // Find how to ignore the one summation in the middle
@@ -615,14 +615,14 @@ double FixGenConp::offdiag(const double &R_xi, const double &R_yi, const double 
 
         offdiag_result += exp(-.25 * ksqr / (alpha * alpha)) *
             cos((R_xj - R_xi) * kx + (R_yj - R_yi) * ky + (R_zj - R_zi) * kz) / (ksqr);
-        std::cout << "Offdiagonal for kx " << kx << " ky " << ky << " kz " << kz  << " is " << " offdiag " << offdiag_result << std::endl;
+        /* std::cout << "Offdiagonal for kx " << kx << " ky " << ky << " kz " << kz  << " is " << " offdiag " << offdiag_result << std::endl; */
       }
     }
   }
 
   // Add the 8pi/V factor
   offdiag_result *= prefactor;
-  std::cout << "After multiplication with prefator: " << offdiag_result << " pref: " << prefactor << std::endl;
+  /* std::cout << "After multiplication with prefator: " << offdiag_result << " pref: " << prefactor << std::endl; */
 
   // Second Summand here
   // This is taken care by firstneigh in code by Wang
@@ -734,7 +734,7 @@ void FixGenConp::a_cal()
                  nr_electrode_atoms_list2, displs2, MPI_DOUBLE, world);
 
   // Precalculate the constant parts
-  std::cout << "Volume is " << volume << std::endl;
+  /* std::cout << "Volume is " << volume << std::endl; */
   double eightPIOverV = 8 * MY_PI / volume;
   /* double alpha = 1 / g_ewald; */
   double alpha = g_ewald;
@@ -752,7 +752,7 @@ void FixGenConp::a_cal()
 
     for (j = 0; j < nr_electrode_atoms_all; ++j) {
 
-      std::cout << "(i, j)" << i << ", " << j << std::endl;
+      /* std::cout << "(i, j)" << i << ", " << j << std::endl; */
 
       xxj = global_position_list[j * 3];
       yyj = global_position_list[j * 3 + 1];
@@ -764,7 +764,7 @@ void FixGenConp::a_cal()
 
       // For the diagonal elements (Kronecker delta):
       if (i == j) aaa_all[i * nr_electrode_atoms_all + j] += diagonal_add;
-      std::cout << "---- Diagonal limit added:diagonal = " << diagonal_add << " aaa_all = " << aaa_all[i*nr_electrode_atoms_all +j] << std::endl;
+      /* std::cout << "---- Diagonal limit added:diagonal = " << diagonal_add << " aaa_all = " << aaa_all[i*nr_electrode_atoms_all +j] << std::endl; */
     }
   }
 
@@ -901,7 +901,8 @@ void FixGenConp::update_charge()
   for (i = 0; i < nall; ++i) {
     if (electrode_check(i)) {
       tagi = tag[i];
-      elealli = id_to_electrode_id[tagi];
+      /* elealli = id_to_electrode_id[tagi]; */
+      elealli = curr_id_to_electrode_id[tagi];
       if (minimizer == 0) {
         q[i] = eleallq[elealli];
       } else if (minimizer == 1) {
