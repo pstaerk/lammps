@@ -16,7 +16,7 @@
    Contributing author: Paul Crozier, Aidan Thompson (SNL)
 ------------------------------------------------------------------------- */
 
-#include "fix_gcmc.h"
+#include "fix_wang_landau.h"
 
 #include "angle.h"
 #include "atom.h"
@@ -45,6 +45,9 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <sstream>
+#include <iostream>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -66,7 +69,7 @@ enum{NONE,MOVEATOM,MOVEMOL}; // movemode
 
 /* ---------------------------------------------------------------------- */
 
-FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
+FixWangLandau::FixWangLandau(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg),
   region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
@@ -98,11 +101,10 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   ngcmc_type = utils::inumeric(FLERR,arg[6],false,lmp);
   seed = utils::inumeric(FLERR,arg[7],false,lmp);
   reservoir_temperature = utils::numeric(FLERR,arg[8],false,lmp);
-  chemical_potential = utils::numeric(FLERR,arg[9],false,lmp);
-  displace = utils::numeric(FLERR,arg[10],false,lmp);
+  displace = utils::numeric(FLERR,arg[9],false,lmp);
 
-  // TODO: Add parsing for the  f parameter + file name
-  // use a double for f
+  // This is the Wang Landau setup
+  f = utils::numeric(FLERR,arg[10],false,lmp);
 
   if (nevery <= 0) error->all(FLERR,"Illegal fix gcmc command");
   if (nexchanges < 0) error->all(FLERR,"Illegal fix gcmc command");
@@ -233,7 +235,7 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
    parse optional parameters at end of input line
 ------------------------------------------------------------------------- */
 
-void FixGCMC::options(int narg, char **arg)
+void FixWangLandau::options(int narg, char **arg)
 {
   if (narg < 0) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -275,6 +277,7 @@ void FixGCMC::options(int narg, char **arg)
   overlap_flag = 0;
   min_ngas = -1;
   max_ngas = INT_MAX;
+  accuracy_fac = 500.0;
 
   int iarg = 0;
   while (iarg < narg) {
@@ -391,13 +394,17 @@ void FixGCMC::options(int narg, char **arg)
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
       max_ngas = utils::numeric(FLERR,arg[iarg+1],false,lmp);
       iarg += 2;
+    } else if (strcmp(arg[iarg],"accuracy") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      accuracy_fac = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      iarg += 2;
     } else error->all(FLERR,"Illegal fix gcmc command");
   }
 }
 
 /* ---------------------------------------------------------------------- */
 
-FixGCMC::~FixGCMC()
+FixWangLandau::~FixWangLandau()
 {
   delete[] idregion;
   delete random_equal;
@@ -433,7 +440,7 @@ FixGCMC::~FixGCMC()
 
 /* ---------------------------------------------------------------------- */
 
-int FixGCMC::setmask()
+int FixWangLandau::setmask()
 {
   int mask = 0;
   mask |= PRE_EXCHANGE;
@@ -442,9 +449,37 @@ int FixGCMC::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixGCMC::init()
+void FixWangLandau::init()
 {
-  // TODO: read the Q, H file here
+  // Parse the Wang Landau parameters
+  std::ifstream file("qs.dat");
+
+  // Check that the file exists
+  if (!file) {
+      error->all(FLERR, "qs.dat does not exist");
+  }
+
+  // Read the file line by line
+  std::string line;
+  unsigned int nlines = 0;
+  while (std::getline(file, line)) {
+      std::istringstream iss(line);
+      std::vector<double> row;
+      for (int i = 0; i < 3; i++) {
+          double val;
+          iss >> val;
+          row.push_back(val);
+          iss.ignore();
+      }
+      // Store this row
+      ns.push_back(row[0]);
+      qs.push_back(row[1]);
+      hs.push_back(row[2]);
+
+      // Create a map from the number of gas molecules to the index in the vector
+      n2i[row[0]] = nlines;
+      nlines++;
+  }
 
   // set index and check validity of region
 
@@ -577,7 +612,7 @@ void FixGCMC::init()
 
     // create unique group name for atoms to be excluded
 
-    auto group_id = std::string("FixGCMC:gcmc_exclusion_group:") + id;
+    auto group_id = std::string("FixWangLandau:gcmc_exclusion_group:") + id;
     group->assign(group_id + " subtract all all");
     exclusion_group = group->find(group_id);
     if (exclusion_group == -1)
@@ -596,7 +631,7 @@ void FixGCMC::init()
 
     // create unique group name for atoms to be rotated
 
-    auto group_id = std::string("FixGCMC:rotation_gas_atoms:") + id;
+    auto group_id = std::string("FixWangLandau:rotation_gas_atoms:") + id;
     group->assign(group_id + " molecule -1");
     molecule_group = group->find(group_id);
     if (molecule_group == -1)
@@ -649,12 +684,14 @@ void FixGCMC::init()
   // For LJ units, lambda=1
   beta = 1.0/(force->boltz*reservoir_temperature);
   if (strcmp(update->unit_style,"lj") == 0)
-    zz = exp(beta*chemical_potential);
+    // Is one, because in Wang Landau, we neglect the chemical potential
+    // Same down below
+    zz = 1;
   else {
     double lambda = sqrt(force->hplanck*force->hplanck/
                          (2.0*MY_PI*gas_mass*force->mvv2e*
                         force->boltz*reservoir_temperature));
-    zz = exp(beta*chemical_potential)/(pow(lambda,3.0));
+    zz = 1/(pow(lambda,3.0));
   }
 
   sigma = sqrt(force->boltz*reservoir_temperature*tfac_insert/gas_mass/force->mvv2e);
@@ -709,7 +746,7 @@ void FixGCMC::init()
    so that ghost atoms and neighbor lists will be correct
 ------------------------------------------------------------------------- */
 
-void FixGCMC::pre_exchange()
+void FixWangLandau::pre_exchange()
 {
   // just return if should not be called on this timestep
 
@@ -739,6 +776,27 @@ void FixGCMC::pre_exchange()
   comm->borders();
   if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
   update_gas_atoms_list();
+
+  // For the check we need to make sure that the minimum and maximum is 
+  // divided by natoms_per_molecule if we are using the molecule mode
+  int current_n = ngas;
+  int minimum = min_ngas;
+  int maximum = max_ngas;
+
+  if (exchmode == EXCHMOL) {
+      minimum /= natoms_per_molecule;
+      maximum /= natoms_per_molecule;
+      current_n /= natoms_per_molecule;
+  }
+
+  // Check that the first value of ns is ngas_min and the last value is ngas_max
+  if (ns[0] != minimum || ns[ns.size()-1] != maximum) {
+      error->all(FLERR, "Bins in qs.dat do not match min and max values");
+  }
+
+  if (current_n < minimum || current_n > maximum) {
+      error->all(FLERR, "The number of gas molecules is outside of the window");
+  }
 
   if (full_flag) {
     energy_stored = energy_full();
@@ -794,13 +852,60 @@ void FixGCMC::pre_exchange()
   }
   next_reneighbor = update->ntimestep + nevery;
 
-  // Output the Q, H into the data file
+  write_histogram();
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_translation()
+void FixWangLandau::wang_landau_update(const int n)
+{
+  // Wang Landau update step
+  unsigned int bin_index = n2i[n];
+  qs[bin_index] += std::log(f);
+  hs[bin_index]++;
+
+
+  // Check if the histogram is converged, which is defined as the minimum
+  // of hs being greater than 500 / sqrt(log(f))
+  for (auto h : hs) {
+    if (h < accuracy_fac / std::sqrt(std::log(f))) {
+      return;
+    }
+  }
+
+  write_histogram();
+  exit(0);
+}
+
+/* ----------------------------------------------------------------------
+------------------------------------------------------------------------- */
+
+void FixWangLandau::write_histogram() {
+  // Write the ns, qs, and hs to the qs.dat file, tab separated
+  std::ofstream file("qs.dat");
+  for (unsigned int i = 0; i < ns.size(); i++) {
+    file << ns[i] << "\t" << qs[i] << "\t" << hs[i] << std::endl;
+  }
+}
+
+/* ----------------------------------------------------------------------
+------------------------------------------------------------------------- */
+
+double FixWangLandau::wang_landau_factor(const int n, const int step)
+{
+  // The Wang Landau factor is the ratio of the current bin to that of
+  // the previous step.  This is used to scale the acceptance probability
+  unsigned int bin_index_is = n2i[n];
+  unsigned int bin_index_to = n2i[n+step];
+
+  return qs[bin_index_is] - qs[bin_index_to];
+}
+
+/* ----------------------------------------------------------------------
+------------------------------------------------------------------------- */
+
+void FixWangLandau::attempt_atomic_translation()
 {
   ntranslation_attempts += 1.0;
 
@@ -874,19 +979,25 @@ void FixGCMC::attempt_atomic_translation()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_deletion()
+void FixWangLandau::attempt_atomic_deletion()
 {
   ndeletion_attempts += 1.0;
 
-  if (ngas == 0 || ngas <= min_ngas) return;
+  if (ngas == 0 || ngas <= min_ngas) {
+    wang_landau_update(ngas);
+    return;
+  }
 
   int i = pick_random_gas_atom();
 
   int success = 0;
+
+  double wl_factor = wang_landau_factor(ngas, -1);
+
   if (i >= 0) {
     double deletion_energy = energy(i,ngcmc_type,-1,atom->x[i]);
     if (random_unequal->uniform() <
-        ngas*exp(beta*deletion_energy)/(zz*volume)) {
+        ngas*exp(wl_factor+beta*deletion_energy)/(zz*volume)) {
       atom->avec->copy(atom->nlocal-1,i,1);
       atom->nlocal--;
       success = 1;
@@ -908,18 +1019,22 @@ void FixGCMC::attempt_atomic_deletion()
     update_gas_atoms_list();
     ndeletion_successes += 1.0;
   }
+  wang_landau_update(ngas);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_insertion()
+void FixWangLandau::attempt_atomic_insertion()
 {
   double lamda[3];
 
   ninsertion_attempts += 1.0;
 
-  if (ngas >= max_ngas) return;
+  if (ngas >= max_ngas) {
+    wang_landau_update(ngas);
+    return;
+  }
 
   // pick coordinates for insertion point
 
@@ -981,9 +1096,11 @@ void FixGCMC::attempt_atomic_insertion()
     }
     double insertion_energy = energy(ii,ngcmc_type,-1,coord);
 
+    double wl_factor = wang_landau_factor(ngas, 1);
+
     if (insertion_energy < MAXENERGYTEST &&
         random_unequal->uniform() <
-        zz*volume*exp(-beta*insertion_energy)/(ngas+1)) {
+        zz*volume*exp(wl_factor-beta*insertion_energy)/(ngas+1)) {
       atom->avec->create_atom(ngcmc_type,coord);
       int m = atom->nlocal - 1;
 
@@ -1021,12 +1138,13 @@ void FixGCMC::attempt_atomic_insertion()
     update_gas_atoms_list();
     ninsertion_successes += 1.0;
   }
+  wang_landau_update(ngas);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_translation()
+void FixWangLandau::attempt_molecule_translation()
 {
   ntranslation_attempts += 1.0;
 
@@ -1125,7 +1243,7 @@ void FixGCMC::attempt_molecule_translation()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_rotation()
+void FixWangLandau::attempt_molecule_rotation()
 {
   nrotation_attempts += 1.0;
 
@@ -1231,11 +1349,14 @@ void FixGCMC::attempt_molecule_rotation()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_deletion()
+void FixWangLandau::attempt_molecule_deletion()
 {
   ndeletion_attempts += 1.0;
 
-  if (ngas == 0 || ngas <= min_ngas) return;
+  if (ngas == 0 || ngas <= min_ngas) {
+    wang_landau_update(ngas/natoms_per_molecule);
+    return;
+  }
 
   // work-around to avoid n=0 problem with fix rigid/nvt/small
 
@@ -1246,8 +1367,10 @@ void FixGCMC::attempt_molecule_deletion()
 
   double deletion_energy_sum = molecule_energy(deletion_molecule);
 
+  double wl_factor = wang_landau_factor(ngas/natoms_per_molecule, -1);
+
   if (random_equal->uniform() <
-      ngas*exp(beta*deletion_energy_sum)/(zz*volume*natoms_per_molecule)) {
+      ngas*exp(wl_factor+beta*deletion_energy_sum)/(zz*volume*natoms_per_molecule)) {
     int i = 0;
     while (i < atom->nlocal) {
       if (atom->molecule[i] == deletion_molecule) {
@@ -1264,17 +1387,21 @@ void FixGCMC::attempt_molecule_deletion()
     update_gas_atoms_list();
     ndeletion_successes += 1.0;
   }
+  wang_landau_update(ngas/natoms_per_molecule);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_insertion()
+void FixWangLandau::attempt_molecule_insertion()
 {
   double lamda[3];
   ninsertion_attempts += 1.0;
 
-  if (ngas >= max_ngas) return;
+  if (ngas >= max_ngas) {
+    wang_landau_update(ngas/natoms_per_molecule);
+    return;
+  }
 
   double com_coord[3];
   if (region) {
@@ -1381,9 +1508,11 @@ void FixGCMC::attempt_molecule_insertion()
   MPI_Allreduce(&insertion_energy,&insertion_energy_sum,1,
                 MPI_DOUBLE,MPI_SUM,world);
 
+  double wl_factor = wang_landau_factor(ngas/natoms_per_molecule, 1);
+
   if (insertion_energy_sum < MAXENERGYTEST &&
       random_equal->uniform() < zz*volume*natoms_per_molecule*
-      exp(-beta*insertion_energy_sum)/(ngas + natoms_per_molecule)) {
+      exp(-wl_factor+beta*insertion_energy_sum)/(ngas + natoms_per_molecule)) {
 
     tagint maxmol = 0;
     for (int i = 0; i < atom->nlocal; i++) maxmol = MAX(maxmol,atom->molecule[i]);
@@ -1459,12 +1588,13 @@ void FixGCMC::attempt_molecule_insertion()
     ninsertion_successes += 1.0;
   }
   delete[] procflag;
+  wang_landau_update(ngas/natoms_per_molecule);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_translation_full()
+void FixWangLandau::attempt_atomic_translation_full()
 {
   ntranslation_attempts += 1.0;
 
@@ -1552,14 +1682,17 @@ void FixGCMC::attempt_atomic_translation_full()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_deletion_full()
+void FixWangLandau::attempt_atomic_deletion_full()
 {
   double q_tmp;
   const int q_flag = atom->q_flag;
 
   ndeletion_attempts += 1.0;
 
-  if (ngas == 0 || ngas <= min_ngas) return;
+  if (ngas == 0 || ngas <= min_ngas) {
+    wang_landau_update(ngas);
+    return;
+  }
 
   double energy_before = energy_stored;
 
@@ -1578,8 +1711,10 @@ void FixGCMC::attempt_atomic_deletion_full()
   if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
+  double wl_factor = wang_landau_factor(ngas, -1);
+
   if (random_equal->uniform() <
-      ngas*exp(beta*(energy_before - energy_after))/(zz*volume)) {
+      ngas*exp(wl_factor+beta*(energy_before - energy_after))/(zz*volume)) {
     if (i >= 0) {
       atom->avec->copy(atom->nlocal-1,i,1);
       atom->nlocal--;
@@ -1598,17 +1733,21 @@ void FixGCMC::attempt_atomic_deletion_full()
     energy_stored = energy_before;
   }
   update_gas_atoms_list();
+  wang_landau_update(ngas);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_atomic_insertion_full()
+void FixWangLandau::attempt_atomic_insertion_full()
 {
   double lamda[3];
   ninsertion_attempts += 1.0;
 
-  if (ngas >= max_ngas) return;
+  if (ngas >= max_ngas) {
+    wang_landau_update(ngas);
+    return;
+  }
 
   double energy_before = energy_stored;
 
@@ -1693,9 +1832,11 @@ void FixGCMC::attempt_atomic_insertion_full()
   if (force->pair->tail_flag) force->pair->reinit();
   double energy_after = energy_full();
 
+  double wl_factor = wang_landau_factor(ngas, 1);
+
   if (energy_after < MAXENERGYTEST &&
       random_equal->uniform() <
-      zz*volume*exp(beta*(energy_before - energy_after))/(ngas+1)) {
+      zz*volume*exp(wl_factor+beta*(energy_before - energy_after))/(ngas+1)) {
 
     ninsertion_successes += 1.0;
     energy_stored = energy_after;
@@ -1707,12 +1848,13 @@ void FixGCMC::attempt_atomic_insertion_full()
     energy_stored = energy_before;
   }
   update_gas_atoms_list();
+  wang_landau_update(ngas);
 }
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_translation_full()
+void FixWangLandau::attempt_molecule_translation_full()
 {
   ntranslation_attempts += 1.0;
 
@@ -1802,7 +1944,7 @@ void FixGCMC::attempt_molecule_translation_full()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_rotation_full()
+void FixWangLandau::attempt_molecule_rotation_full()
 {
   nrotation_attempts += 1.0;
 
@@ -1901,11 +2043,14 @@ void FixGCMC::attempt_molecule_rotation_full()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_deletion_full()
+void FixWangLandau::attempt_molecule_deletion_full()
 {
   ndeletion_attempts += 1.0;
 
-  if (ngas == 0 || ngas <= min_ngas) return;
+  if (ngas == 0 || ngas <= min_ngas) {
+    wang_landau_update(ngas/natoms_per_molecule);
+    return;
+  }
 
   // work-around to avoid n=0 problem with fix rigid/nvt/small
 
@@ -1946,7 +2091,9 @@ void FixGCMC::attempt_molecule_deletion_full()
 
   // energy_before corrected by energy_intra
 
-  double deltaphi = ngas*exp(beta*((energy_before - energy_intra) - energy_after))/(zz*volume*natoms_per_molecule);
+  double wl_factor = wang_landau_factor(ngas/natoms_per_molecule, -1);
+  double deltaphi = ngas*exp(wl_factor+beta*((energy_before - energy_intra) 
+                    - energy_after))/(zz*volume*natoms_per_molecule);
 
   if (random_equal->uniform() < deltaphi) {
     int i = 0;
@@ -1977,21 +2124,22 @@ void FixGCMC::attempt_molecule_deletion_full()
     if (force->pair->tail_flag) force->pair->reinit();
   }
   update_gas_atoms_list();
+  wang_landau_update(ngas/natoms_per_molecule);
   delete[] tmpmask;
 }
-
-// TODO: write a Q, H update function which gets N as a parameter
 
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::attempt_molecule_insertion_full()
+void FixWangLandau::attempt_molecule_insertion_full()
 {
   double lamda[3];
   ninsertion_attempts += 1.0;
 
-  // TODO: also need to update here!
-  if (ngas >= max_ngas) return;
+  if (ngas >= max_ngas) {
+    wang_landau_update(ngas/natoms_per_molecule);
+    return;
+  }
 
   double energy_before = energy_stored;
 
@@ -2155,22 +2303,17 @@ void FixGCMC::attempt_molecule_insertion_full()
 
   // energy_after corrected by energy_intra
 
-  // TODO: update with the Q(N) correction
+  double wl_factor = wang_landau_factor(ngas/natoms_per_molecule, 1);
+
   double deltaphi = zz*volume*natoms_per_molecule*
-    exp(beta*(energy_before - (energy_after - energy_intra)))/(ngas + natoms_per_molecule);
+    exp(wl_factor+beta*(energy_before - (energy_after - energy_intra)))/(ngas + natoms_per_molecule);
 
   if (energy_after < MAXENERGYTEST &&
       random_equal->uniform() < deltaphi) {
 
     ninsertion_successes += 1.0;
     energy_stored = energy_after;
-
-    // Update Q(N+1)
-
   } else {
-
-    // TODO: Update Q(N)
-
     atom->nbonds -= onemols[imol]->nbonds;
     atom->nangles -= onemols[imol]->nangles;
     atom->ndihedrals -= onemols[imol]->ndihedrals;
@@ -2189,13 +2332,14 @@ void FixGCMC::attempt_molecule_insertion_full()
     if (force->pair->tail_flag) force->pair->reinit();
   }
   update_gas_atoms_list();
+  wang_landau_update(ngas/natoms_per_molecule);
 }
 
 /* ----------------------------------------------------------------------
    compute particle's interaction energy with the rest of the system
 ------------------------------------------------------------------------- */
 
-double FixGCMC::energy(int i, int itype, tagint imolecule, double *coord)
+double FixWangLandau::energy(int i, int itype, tagint imolecule, double *coord)
 {
   double delx,dely,delz,rsq;
 
@@ -2243,7 +2387,7 @@ double FixGCMC::energy(int i, int itype, tagint imolecule, double *coord)
    sum across all procs that own atoms of the given molecule
 ------------------------------------------------------------------------- */
 
-double FixGCMC::molecule_energy(tagint gas_molecule_id)
+double FixWangLandau::molecule_energy(tagint gas_molecule_id)
 {
   double mol_energy = 0.0;
   for (int i = 0; i < atom->nlocal; i++)
@@ -2261,7 +2405,7 @@ double FixGCMC::molecule_energy(tagint gas_molecule_id)
    compute system potential energy
 ------------------------------------------------------------------------- */
 
-double FixGCMC::energy_full()
+double FixWangLandau::energy_full()
 {
   int imolecule;
 
@@ -2351,7 +2495,7 @@ double FixGCMC::energy_full()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-int FixGCMC::pick_random_gas_atom()
+int FixWangLandau::pick_random_gas_atom()
 {
   int i = -1;
   int iwhichglobal = static_cast<int> (ngas*random_equal->uniform());
@@ -2367,7 +2511,7 @@ int FixGCMC::pick_random_gas_atom()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-tagint FixGCMC::pick_random_gas_molecule()
+tagint FixWangLandau::pick_random_gas_molecule()
 {
   int iwhichglobal = static_cast<int> (ngas*random_equal->uniform());
   tagint gas_molecule_id = 0;
@@ -2388,7 +2532,7 @@ tagint FixGCMC::pick_random_gas_molecule()
 /* ----------------------------------------------------------------------
 ------------------------------------------------------------------------- */
 
-void FixGCMC::toggle_intramolecular(int i)
+void FixWangLandau::toggle_intramolecular(int i)
 {
   if (atom->avec->bonds_allow)
     for (int m = 0; m < atom->num_bond[i]; m++)
@@ -2411,7 +2555,7 @@ void FixGCMC::toggle_intramolecular(int i)
    update the list of gas atoms
 ------------------------------------------------------------------------- */
 
-void FixGCMC::update_gas_atoms_list()
+void FixWangLandau::update_gas_atoms_list()
 {
   int nlocal = atom->nlocal;
   int *mask = atom->mask;
@@ -2499,7 +2643,7 @@ void FixGCMC::update_gas_atoms_list()
   return acceptance ratios
 ------------------------------------------------------------------------- */
 
-double FixGCMC::compute_vector(int n)
+double FixWangLandau::compute_vector(int n)
 {
   if (n == 0) return ntranslation_attempts;
   if (n == 1) return ntranslation_successes;
@@ -2516,7 +2660,7 @@ double FixGCMC::compute_vector(int n)
    memory usage of local atom-based arrays
 ------------------------------------------------------------------------- */
 
-double FixGCMC::memory_usage()
+double FixWangLandau::memory_usage()
 {
   double bytes = (double)gcmc_nmax * sizeof(int);
   return bytes;
@@ -2526,7 +2670,7 @@ double FixGCMC::memory_usage()
    pack entire state of Fix into one write
 ------------------------------------------------------------------------- */
 
-void FixGCMC::write_restart(FILE *fp)
+void FixWangLandau::write_restart(FILE *fp)
 {
   int n = 0;
   double list[12];
@@ -2554,7 +2698,7 @@ void FixGCMC::write_restart(FILE *fp)
    use state info from restart file to restart the Fix
 ------------------------------------------------------------------------- */
 
-void FixGCMC::restart(char *buf)
+void FixWangLandau::restart(char *buf)
 {
   int n = 0;
   auto list = (double *) buf;
@@ -2581,7 +2725,7 @@ void FixGCMC::restart(char *buf)
     error->all(FLERR,"Must not reset timestep when restarting fix gcmc");
 }
 
-void FixGCMC::grow_molecule_arrays(int nmolatoms) {
+void FixWangLandau::grow_molecule_arrays(int nmolatoms) {
     nmaxmolatoms = nmolatoms;
     molcoords = memory->grow(molcoords,nmaxmolatoms,3,"gcmc:molcoords");
     molq = memory->grow(molq,nmaxmolatoms,"gcmc:molq");
@@ -2593,7 +2737,7 @@ void FixGCMC::grow_molecule_arrays(int nmolatoms) {
    extract variable which stores index of exclusion group
 ------------------------------------------------------------------------- */
 
-void *FixGCMC::extract(const char *name, int &dim)
+void *FixWangLandau::extract(const char *name, int &dim)
 {
   if (strcmp(name,"exclusion_group") == 0) {
     dim = 0;
