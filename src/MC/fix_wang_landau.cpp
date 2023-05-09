@@ -875,6 +875,7 @@ void FixWangLandau::wang_landau_update(const int n)
   }
 
   write_histogram();
+  MPI_Finalize();
   exit(0);
 }
 
@@ -2234,8 +2235,9 @@ void FixWangLandau::attempt_molecule_insertion_full()
 
     imageint imagetmp = imagezero;
     domain->remap(xtmp,imagetmp);
-    if (!domain->inside(xtmp))
+    if (!domain->inside(xtmp)) {
       error->one(FLERR,"Fix gcmc put atom outside box");
+    }
 
     int proc_flag = 0;
     if (triclinic == 0) {
