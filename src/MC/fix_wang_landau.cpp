@@ -451,6 +451,11 @@ int FixWangLandau::setmask()
 
 void FixWangLandau::init()
 {
+  // Make the ns, qs and hs an empty vector
+  ns = std::vector<int>();
+  qs = std::vector<double>();
+  hs = std::vector<double>();
+
   // Parse the Wang Landau parameters
   std::ifstream file("qs.dat");
 
