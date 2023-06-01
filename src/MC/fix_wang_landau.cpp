@@ -800,6 +800,10 @@ void FixWangLandau::pre_exchange()
   }
 
   if (current_n < minimum || current_n > maximum) {
+      // print out the current n and the minimum and maximum
+      std::cout << "Current n: " << current_n << std::endl;
+      std::cout << "Minimum n: " << minimum << std::endl;
+      std::cout << "Maximum n: " << maximum << std::endl;
       error->all(FLERR, "The number of gas molecules is outside of the window");
   }
 
@@ -2241,6 +2245,14 @@ void FixWangLandau::attempt_molecule_insertion_full()
     imageint imagetmp = imagezero;
     domain->remap(xtmp,imagetmp);
     if (!domain->inside(xtmp)) {
+      // Print out the coordinates of the molecule that is being inserted
+      std::cout << "Molecule coordinates: " << std::endl;
+      std::cout << xtmp[0] << " " << xtmp[1] << " " << xtmp[2] << std::endl;
+
+      // Also print the zlo_region
+      std::cout << "Region coordinates: " << std::endl;
+      std::cout << region_xlo << " " << region_xhi << " " << region_ylo << " " << region_yhi << " " << region_zlo << " " << region_zhi << std::endl;
+
       error->one(FLERR,"Fix gcmc put atom outside box");
     }
 
@@ -2578,68 +2590,68 @@ void FixWangLandau::update_gas_atoms_list()
 
   ngas_local = 0;
 
-  if (region) {
+  //if (region) {
 
-    if (exchmode == EXCHMOL || movemode == MOVEMOL) {
+  //  if (exchmode == EXCHMOL || movemode == MOVEMOL) {
 
-      tagint maxmol = 0;
-      for (int i = 0; i < nlocal; i++) maxmol = MAX(maxmol,molecule[i]);
-      tagint maxmol_all;
-      MPI_Allreduce(&maxmol,&maxmol_all,1,MPI_LMP_TAGINT,MPI_MAX,world);
-      auto comx = new double[maxmol_all];
-      auto comy = new double[maxmol_all];
-      auto comz = new double[maxmol_all];
-      for (int imolecule = 0; imolecule < maxmol_all; imolecule++) {
-        for (int i = 0; i < nlocal; i++) {
-          if (molecule[i] == imolecule) {
-            mask[i] |= molecule_group_bit;
-          } else {
-            mask[i] &= molecule_group_inversebit;
-          }
-        }
-        double com[3];
-        com[0] = com[1] = com[2] = 0.0;
-        group->xcm(molecule_group,gas_mass,com);
+  //    tagint maxmol = 0;
+  //    for (int i = 0; i < nlocal; i++) maxmol = MAX(maxmol,molecule[i]);
+  //    tagint maxmol_all;
+  //    MPI_Allreduce(&maxmol,&maxmol_all,1,MPI_LMP_TAGINT,MPI_MAX,world);
+  //    auto comx = new double[maxmol_all];
+  //    auto comy = new double[maxmol_all];
+  //    auto comz = new double[maxmol_all];
+  //    for (int imolecule = 0; imolecule < maxmol_all; imolecule++) {
+  //      for (int i = 0; i < nlocal; i++) {
+  //        if (molecule[i] == imolecule) {
+  //          mask[i] |= molecule_group_bit;
+  //        } else {
+  //          mask[i] &= molecule_group_inversebit;
+  //        }
+  //      }
+  //      double com[3];
+  //      com[0] = com[1] = com[2] = 0.0;
+  //      group->xcm(molecule_group,gas_mass,com);
 
-        // remap unwrapped com into periodic box
+  //      // remap unwrapped com into periodic box
 
-        domain->remap(com);
-        comx[imolecule] = com[0];
-        comy[imolecule] = com[1];
-        comz[imolecule] = com[2];
-      }
+  //      domain->remap(com);
+  //      comx[imolecule] = com[0];
+  //      comy[imolecule] = com[1];
+  //      comz[imolecule] = com[2];
+  //    }
 
-      for (int i = 0; i < nlocal; i++) {
-        if (mask[i] & groupbit) {
-          if (region->match(comx[molecule[i]],
-             comy[molecule[i]],comz[molecule[i]]) == 1) {
-            local_gas_list[ngas_local] = i;
-            ngas_local++;
-          }
-        }
-      }
-      delete[] comx;
-      delete[] comy;
-      delete[] comz;
-    } else {
-      for (int i = 0; i < nlocal; i++) {
-        if (mask[i] & groupbit) {
-          if (region->match(x[i][0],x[i][1],x[i][2]) == 1) {
-            local_gas_list[ngas_local] = i;
-            ngas_local++;
-          }
-        }
-      }
-    }
+  //    for (int i = 0; i < nlocal; i++) {
+  //      if (mask[i] & groupbit) {
+  //        if (region->match(comx[molecule[i]],
+  //           comy[molecule[i]],comz[molecule[i]]) == 1) {
+  //          local_gas_list[ngas_local] = i;
+  //          ngas_local++;
+  //        }
+  //      }
+  //    }
+  //    delete[] comx;
+  //    delete[] comy;
+  //    delete[] comz;
+  //  } else {
+  //    for (int i = 0; i < nlocal; i++) {
+  //      if (mask[i] & groupbit) {
+  //        if (region->match(x[i][0],x[i][1],x[i][2]) == 1) {
+  //          local_gas_list[ngas_local] = i;
+  //          ngas_local++;
+  //        }
+  //      }
+  //    }
+  //  }
 
-  } else {
+  //} else {
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
         local_gas_list[ngas_local] = i;
         ngas_local++;
       }
     }
-  }
+  //}
 
   MPI_Allreduce(&ngas_local,&ngas,1,MPI_INT,MPI_SUM,world);
   MPI_Scan(&ngas_local,&ngas_before,1,MPI_INT,MPI_SUM,world);
