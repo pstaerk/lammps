@@ -74,7 +74,8 @@ FixWangLandau::FixWangLandau(LAMMPS *lmp, int narg, char **arg) :
   region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
   molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
-  fixrigid(nullptr), fixshake(nullptr), idrigid(nullptr), idshake(nullptr)
+  fixrigid(nullptr), fixshake(nullptr), fixsconp(nullptr), idrigid(nullptr), idshake(nullptr),
+  idconp(nullptr)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -260,6 +261,7 @@ void FixWangLandau::options(int narg, char **arg)
   fugacity_coeff = 1.0;
   rigidflag = 0;
   shakeflag = 0;
+  conpflag = 0;
   charge = 0.0;
   charge_flag = false;
   full_flag = false;
@@ -335,6 +337,12 @@ void FixWangLandau::options(int narg, char **arg)
       delete [] idrigid;
       idrigid = utils::strdup(arg[iarg+1]);
       rigidflag = 1;
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"conp") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      delete [] idconp;
+      idconp = utils::strdup(arg[iarg+1]);
+      conpflag = 1;
       iarg += 2;
     } else if (strcmp(arg[iarg],"shake") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
@@ -416,6 +424,7 @@ FixWangLandau::~FixWangLandau()
   memory->destroy(molimage);
 
   delete[] idrigid;
+  delete[] idconp;
   delete[] idshake;
 
   if (ngroups > 0) {
@@ -582,7 +591,7 @@ void FixWangLandau::init()
   // if rigidflag defined, check for rigid/small fix
   // its molecule template must be same as this one
 
-  fixrigid = nullptr;
+  fixrigig = nullptr;
   if (rigidflag) {
     int ifix = modify->find_fix(idrigid);
     if (ifix < 0) error->all(FLERR,"Fix gcmc rigid fix does not exist");
@@ -590,6 +599,13 @@ void FixWangLandau::init()
     int tmp;
     if (&onemols[imol] != (Molecule **) fixrigid->extract("onemol",tmp))
       error->all(FLERR, "Fix gcmc and fix rigid/small not using same molecule template ID");
+  }
+
+  // For the energy calculation we have to update the charges of the fix conp
+  if (conpflag) {
+    int ifix = modify->find_fix(idconp);
+    if (ifix < 0) error->all(FLERR,"Fix gcmc conp fix does not exist");
+    fixconp = modify->fix[ifix];
   }
 
   // if shakeflag defined, check for SHAKE fix
@@ -2441,6 +2457,8 @@ double FixWangLandau::energy_full()
 
   // if overlap check requested, if overlap,
   // return signal value for energy
+  if (conpflag)
+    fixconp->update_charges();
 
   if (overlap_flag) {
     int overlaptestall;
