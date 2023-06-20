@@ -74,7 +74,7 @@ FixWangLandau::FixWangLandau(LAMMPS *lmp, int narg, char **arg) :
   region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
   molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
-  fixrigid(nullptr), fixshake(nullptr), fixsconp(nullptr), idrigid(nullptr), idshake(nullptr),
+  fixrigid(nullptr), fixshake(nullptr), fixconp(nullptr), idrigid(nullptr), idshake(nullptr),
   idconp(nullptr)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
@@ -591,7 +591,7 @@ void FixWangLandau::init()
   // if rigidflag defined, check for rigid/small fix
   // its molecule template must be same as this one
 
-  fixrigig = nullptr;
+  fixrigid = nullptr;
   if (rigidflag) {
     int ifix = modify->find_fix(idrigid);
     if (ifix < 0) error->all(FLERR,"Fix gcmc rigid fix does not exist");
@@ -2455,11 +2455,12 @@ double FixWangLandau::energy_full()
   int eflag = 1;
   int vflag = 0;
 
+  // Constant Potential Update call
+  if (conpflag)
+    fixconp->pre_force(0);
+
   // if overlap check requested, if overlap,
   // return signal value for energy
-  if (conpflag)
-    fixconp->update_charges();
-
   if (overlap_flag) {
     int overlaptestall;
     int overlaptest = 0;
