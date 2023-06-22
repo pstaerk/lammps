@@ -71,7 +71,7 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
   molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
-  fixrigid(nullptr), fixshake(nullptr), idrigid(nullptr), idshake(nullptr)
+  fixrigid(nullptr), fixshake(nullptr), fixconp(nullptr), idrigid(nullptr), idshake(nullptr), idconp(nullptr)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -258,6 +258,7 @@ void FixGCMC::options(int narg, char **arg)
   fugacity_coeff = 1.0;
   rigidflag = 0;
   shakeflag = 0;
+  conpflag = 0;
   charge = 0.0;
   charge_flag = false;
   full_flag = false;
@@ -339,6 +340,12 @@ void FixGCMC::options(int narg, char **arg)
       idshake = utils::strdup(arg[iarg+1]);
       shakeflag = 1;
       iarg += 2;
+    } else if (strcmp(arg[iarg],"conp") == 0) {
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
+      delete [] idconp;
+      idconp = utils::strdup(arg[iarg+1]);
+      conpflag = 1;
+      iarg += 2;
     } else if (strcmp(arg[iarg],"full_energy") == 0) {
       full_flag = true;
       iarg += 1;
@@ -410,6 +417,7 @@ FixGCMC::~FixGCMC()
 
   delete[] idrigid;
   delete[] idshake;
+  delete[] idconp;
 
   if (ngroups > 0) {
     for (int igroup = 0; igroup < ngroups; igroup++)
@@ -550,6 +558,15 @@ void FixGCMC::init()
     int tmp;
     if (&onemols[imol] != (Molecule **) fixrigid->extract("onemol",tmp))
       error->all(FLERR, "Fix gcmc and fix rigid/small not using same molecule template ID");
+  }
+
+  // If constant potential is to be relaxed, we update the charges in 
+  // energy_full
+  fixconp = nullptr;
+  if (conpflag) {
+    int ifix = modify->find_fix(idconp);
+    if (ifix < 0) error->all(FLERR,"Fix gcmc conp fix does not exist");
+    fixconp = modify->fix[ifix];
   }
 
   // if shakeflag defined, check for SHAKE fix
@@ -2275,6 +2292,10 @@ double FixGCMC::energy_full()
   neighbor->build(1);
   int eflag = 1;
   int vflag = 0;
+
+  // Constant Potential Update call
+  if (conpflag)
+    fixconp->pre_force(0);
 
   // if overlap check requested, if overlap,
   // return signal value for energy

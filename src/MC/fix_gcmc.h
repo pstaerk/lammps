@@ -111,9 +111,9 @@ class FixGCMC : public Fix {
 
   class Molecule **onemols;
   int imol, nmol;
-  class Fix *fixrigid, *fixshake;
-  int rigidflag, shakeflag;
-  char *idrigid, *idshake;
+  class Fix *fixrigid, *fixshake, *fixconp;
+  int rigidflag, shakeflag, conpflag;
+  char *idrigid, *idshake, *idconp;
   int triclinic;    // 0 = orthog box, 1 = triclinic
 
   class Compute *c_pe;

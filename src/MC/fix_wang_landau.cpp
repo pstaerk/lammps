@@ -602,6 +602,7 @@ void FixWangLandau::init()
   }
 
   // For the energy calculation we have to update the charges of the fix conp
+  fixconp = nullptr;
   if (conpflag) {
     int ifix = modify->find_fix(idconp);
     if (ifix < 0) error->all(FLERR,"Fix gcmc conp fix does not exist");
