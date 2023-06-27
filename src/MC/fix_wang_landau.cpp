@@ -495,6 +495,12 @@ void FixWangLandau::init()
       nlines++;
   }
 
+  // Immdiately close the file and then write the histogram to file in cpp 
+  // formatting (useful to see if the run has started if srun does not directly
+  // print the log file)
+  file.close();
+  write_histogram();
+
   // set index and check validity of region
 
   if (idregion) {
