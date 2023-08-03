@@ -460,6 +460,15 @@ void PPPMElectrode::compute(int eflag, int vflag)
           density_brick[nz][ny][nx] += electrolyte_density_brick[nz][ny][nx];
         }
   } else {
+    //      // extend size of per-atom arrays if necessary
+    //      if (atom->nmax > nmax) {
+    //        memory->destroy(part2grid);
+    //        nmax = atom->nmax;
+    //        memory->create(part2grid, nmax, 3, "pppm/electrode:part2grid");
+    //      }
+    //      // find grid points for all my particles
+    //      // map my particle charge onto my local 3d density grid
+    //      particle_map();
     make_rho();
 
     // all procs communicate density values from their ghost cells
@@ -564,9 +573,13 @@ void PPPMElectrode::compute(int eflag, int vflag)
 ------------------------------------------------------------------------- */
 void PPPMElectrode::start_compute()
 {
-  if (compute_step < update->ntimestep) {
+  // compute step is not up to date if we do gcmc !!!
+  // if (compute_step < update->ntimestep) {
+    // ERROR patch !!!!
+    // In the original implementation, this part was also not wrapped in a
+    // if condition, caused headaches with gcmc
     if (compute_step == -1) setup();
-    boxlo = domain->boxlo;
+
     // extend size of per-atom arrays if necessary
     if (atom->nmax > nmax) {
       memory->destroy(part2grid);
@@ -576,8 +589,10 @@ void PPPMElectrode::start_compute()
     // find grid points for all my particles
     // map my particle charge onto my local 3d density grid
     particle_map();
+    // ERROR patch !!!!
+    boxlo = domain->boxlo;
     compute_step = update->ntimestep;
-  }
+  // }
 }
 
 /* ----------------------------------------------------------------------
