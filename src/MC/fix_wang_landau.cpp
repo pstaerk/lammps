@@ -48,6 +48,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -75,7 +76,7 @@ FixWangLandau::FixWangLandau(LAMMPS *lmp, int narg, char **arg) :
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
   molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
   fixrigid(nullptr), fixshake(nullptr), fixconp(nullptr), idrigid(nullptr), idshake(nullptr),
-  idconp(nullptr)
+  idconp(nullptr), nonneutralflag(false)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -265,6 +266,9 @@ void FixWangLandau::options(int narg, char **arg)
   charge = 0.0;
   charge_flag = false;
   full_flag = false;
+  nonneutralflag = false;
+  kspace_volume = 0.0;
+  kspace_qscale = 0.0;
   ngroups = 0;
   int ngroupsmax = 0;
   groupstrings = nullptr;
@@ -352,6 +356,12 @@ void FixWangLandau::options(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"full_energy") == 0) {
       full_flag = true;
+      iarg += 1;
+    } else if (strcmp(arg[iarg],"nonneutral") == 0) {
+      nonneutralflag = true;
+      kspace_volume = domain->prd[0] * domain->prd[1] * domain->prd[2] *
+                      force->kspace->slab_volfactor;
+      kspace_qscale = force->kspace->qqrd2e * force->kspace->scale;
       iarg += 1;
     } else if (strcmp(arg[iarg],"group") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
@@ -920,7 +930,8 @@ void FixWangLandau::write_histogram() {
   if (comm->me == 0) {
     std::ofstream file("qs.dat");
     for (unsigned int i = 0; i < ns.size(); i++) {
-      file << ns[i] << "\t" << qs[i] << "\t" << hs[i] << std::endl;
+      file << std::fixed << std::setprecision(17) << ns[i] << "\t" << qs[i] << "\t"
+           << hs[i] << std::endl;
     }
     file.close();
   }
@@ -2453,6 +2464,9 @@ double FixWangLandau::molecule_energy(tagint gas_molecule_id)
 
 double FixWangLandau::energy_full()
 {
+  // Hack
+  update->ntimestep -= 1;
+
   int imolecule;
 
   if (triclinic) domain->x2lamda(atom->nlocal);
@@ -2467,8 +2481,11 @@ double FixWangLandau::energy_full()
   int vflag = 0;
 
   // Constant Potential Update call
-  if (conpflag)
+  if (conpflag) 
+  {
     fixconp->pre_force(0);
+  }
+
 
   // if overlap check requested, if overlap,
   // return signal value for energy
@@ -2522,6 +2539,16 @@ double FixWangLandau::energy_full()
 
   if (force->kspace) force->kspace->compute(eflag,vflag);
 
+  if (nonneutralflag)
+  {
+    force->kspace->energy *= 0.5*kspace_volume;
+    force->kspace->energy +=
+      MY_PI2*force->kspace->qsum*force->kspace->qsum / 
+                          (force->kspace->g_ewald*force->kspace->g_ewald*
+                           kspace_volume);
+    force->kspace->energy *= kspace_qscale;
+  }
+
   // unlike Verlet, not performing a reverse_comm() or forces here
   // b/c GCMC does not care about forces
   // don't think it will mess up energy due to any post_force() fixes
@@ -2538,6 +2565,7 @@ double FixWangLandau::energy_full()
   update->eflag_global = update->ntimestep;
   double total_energy = c_pe->compute_scalar();
 
+  update->ntimestep -= 1;
   return total_energy;
 }
 

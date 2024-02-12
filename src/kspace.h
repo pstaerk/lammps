@@ -184,6 +184,10 @@ class KSpace : protected Pointers {
   double **get_gcons() { return gcons; }
   double **get_dgcons() { return dgcons; }
 
+  // Taken out of protected...
+  double scale, qqrd2e;
+  double qsum, qsqsum, q2;
+
  protected:
   int gridflag, gridflag_6;
   int gewaldflag, gewaldflag_6;
@@ -191,8 +195,6 @@ class KSpace : protected Pointers {
   int adjust_cutoff_flag;
   int suffix_flag;    // suffix compatibility flag
   bigint natoms_original;
-  double scale, qqrd2e;
-  double qsum, qsqsum, q2;
   double **gcons, **dgcons;    // accumulated per-atom energy/virial
 
   int evflag, evflag_atom;

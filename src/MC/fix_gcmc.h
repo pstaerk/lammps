@@ -54,6 +54,7 @@ class FixGCMC : public Fix {
   bool pressure_flag;      // true if user specified reservoir pressure
   bool charge_flag;        // true if user specified atomic charge
   bool full_flag;          // true if doing full system energy calculations
+  bool nonneutralflag;     // non neutral flag to remove the background interaction
 
   int natoms_per_molecule;    // number of atoms in each inserted molecule
   int nmaxmolatoms;           // number of atoms allocated for molecule arrays
@@ -96,6 +97,8 @@ class FixGCMC : public Fix {
   imageint *molimage;
   imageint imagezero;
   double overlap_cutoffsq;    // square distance cutoff for overlap
+  double kspace_volume;
+  double kspace_qscale;
   int overlap_flag;
   int max_ngas;
   int min_ngas;

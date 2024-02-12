@@ -454,8 +454,8 @@ void Ewald::compute(int eflag, int vflag)
       energy += ug[k] * (sfacrl_all[k]*sfacrl_all[k] +
                          sfacim_all[k]*sfacim_all[k]);
 
-    energy -= g_ewald*qsqsum/MY_PIS +
-      MY_PI2*qsum*qsum / (g_ewald*g_ewald*volume);
+    energy -= g_ewald*qsqsum/MY_PIS; //+
+      //MY_PI2*qsum*qsum / (g_ewald*g_ewald*volume);
     energy *= qscale;
   }
 
@@ -476,8 +476,8 @@ void Ewald::compute(int eflag, int vflag)
   if (evflag_atom) {
     if (eflag_atom) {
       for (i = 0; i < nlocal; i++) {
-        eatom[i] -= g_ewald*q[i]*q[i]/MY_PIS + MY_PI2*q[i]*qsum /
-          (g_ewald*g_ewald*volume);
+        eatom[i] -= g_ewald*q[i]*q[i]/MY_PIS ;//+ MY_PI2*q[i]*qsum /
+          //(g_ewald*g_ewald*volume);
         eatom[i] *= qscale;
       }
     }

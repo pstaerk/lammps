@@ -40,16 +40,19 @@ class PPPM : public KSpace {
 
   void compute_group_group(int, int, int) override;
 
+
  protected:
   int me, nprocs;
   int nfactors;
   int *factors;
   double cutoff;
-  double volume;
   double delxinv, delyinv, delzinv, delvolinv;
   double h_x, h_y, h_z;
   double shift, shiftone, shiftatom_lo, shiftatom_hi;
   int peratom_allocate_flag;
+
+  // Taken out of protected...
+  double volume;
 
   int nxlo_in, nylo_in, nzlo_in, nxhi_in, nyhi_in, nzhi_in;
   int nxlo_out, nylo_out, nzlo_out, nxhi_out, nyhi_out, nzhi_out;

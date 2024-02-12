@@ -76,7 +76,7 @@ KSpace::KSpace(LAMMPS *lmp) : Pointers(lmp)
   suffix_flag = Suffix::NONE;
   adjust_cutoff_flag = 1;
   scalar_pressure_flag = 0;
-  warn_nonneutral = 1;
+  warn_nonneutral = 0;
   warn_nocharge = 1;
 
   accuracy_absolute = -1.0;
@@ -320,13 +320,13 @@ void KSpace::qsum_qsq(int warning_flag)
   // not yet sure of the correction needed for non-neutral systems
   // so issue warning or error
 
-  if (fabs(qsum) > SMALL) {
-    std::string message = fmt::format("System is not charge neutral, net "
-                                      "charge = {:.8}",qsum);
-    if (!warn_nonneutral) error->all(FLERR,message);
-    if (warn_nonneutral == 1 && comm->me == 0) error->warning(FLERR,message);
-    warn_nonneutral = 2;
-  }
+  // if (fabs(qsum) > SMALL) {
+  //   std::string message = fmt::format("System is not charge neutral, net "
+  //                                     "charge = {:.8}",qsum);
+  //   if (!warn_nonneutral) error->all(FLERR,message);
+  //   if (warn_nonneutral == 1 && comm->me == 0) error->warning(FLERR,message);
+  //   warn_nonneutral = 2;
+  // }
 }
 
 /* ----------------------------------------------------------------------

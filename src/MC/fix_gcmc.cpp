@@ -71,7 +71,8 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   region(nullptr), idregion(nullptr), full_flag(false), groupstrings(nullptr),
   grouptypestrings(nullptr), grouptypebits(nullptr), grouptypes(nullptr), local_gas_list(nullptr),
   molcoords(nullptr), molq(nullptr), molimage(nullptr), random_equal(nullptr), random_unequal(nullptr),
-  fixrigid(nullptr), fixshake(nullptr), fixconp(nullptr), idrigid(nullptr), idshake(nullptr), idconp(nullptr)
+  fixrigid(nullptr), fixshake(nullptr), fixconp(nullptr), idrigid(nullptr), idshake(nullptr), idconp(nullptr),
+  nonneutralflag(false)
 {
   if (narg < 11) error->all(FLERR,"Illegal fix gcmc command");
 
@@ -262,6 +263,9 @@ void FixGCMC::options(int narg, char **arg)
   charge = 0.0;
   charge_flag = false;
   full_flag = false;
+  nonneutralflag = false;
+  kspace_volume = 0.0;
+  kspace_qscale = 0.0;
   ngroups = 0;
   int ngroupsmax = 0;
   groupstrings = nullptr;
@@ -348,6 +352,12 @@ void FixGCMC::options(int narg, char **arg)
       iarg += 2;
     } else if (strcmp(arg[iarg],"full_energy") == 0) {
       full_flag = true;
+      iarg += 1;
+    } else if (strcmp(arg[iarg],"nonneutral") == 0) {
+      nonneutralflag = true;
+      kspace_volume = domain->prd[0] * domain->prd[1] * domain->prd[2] *
+                      force->kspace->slab_volfactor;
+      kspace_qscale = force->kspace->qqrd2e * force->kspace->scale;
       iarg += 1;
     } else if (strcmp(arg[iarg],"group") == 0) {
       if (iarg+2 > narg) error->all(FLERR,"Illegal fix gcmc command");
@@ -2280,6 +2290,7 @@ double FixGCMC::molecule_energy(tagint gas_molecule_id)
 
 double FixGCMC::energy_full()
 {
+  update->ntimestep += 1;
   int imolecule;
 
   if (triclinic) domain->x2lamda(atom->nlocal);
@@ -2355,6 +2366,16 @@ double FixGCMC::energy_full()
   // don't think it will mess up energy due to any post_force() fixes
   // but Modify::pre_reverse() is needed for INTEL
 
+  if (nonneutralflag)
+  {
+    force->kspace->energy *= 0.5*kspace_volume;
+    force->kspace->energy +=
+      MY_PI2*force->kspace->qsum*force->kspace->qsum / 
+                          (force->kspace->g_ewald*force->kspace->g_ewald*
+                           kspace_volume);
+    force->kspace->energy *= kspace_qscale;
+  }
+
   if (modify->n_pre_reverse) modify->pre_reverse(eflag,vflag);
   if (modify->n_post_force_any) modify->post_force(vflag);
 
@@ -2366,6 +2387,7 @@ double FixGCMC::energy_full()
   update->eflag_global = update->ntimestep;
   double total_energy = c_pe->compute_scalar();
 
+  update->ntimestep -= 1;
   return total_energy;
 }
 
