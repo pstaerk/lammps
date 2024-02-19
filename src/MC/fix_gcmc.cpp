@@ -2339,7 +2339,11 @@ double FixGCMC::energy_full()
     }
     MPI_Allreduce(&overlaptest, &overlaptestall, 1,
                   MPI_INT, MPI_MAX, world);
-    if (overlaptestall) return MAXENERGYSIGNAL;
+    if (overlaptestall) {
+      // Having incremented it before, we should decrement it here again
+      update->ntimestep -= 1;
+      return MAXENERGYSIGNAL;
+    }
   }
 
   // clear forces so they don't accumulate over multiple
