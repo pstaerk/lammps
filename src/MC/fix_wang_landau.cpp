@@ -2565,7 +2565,8 @@ double FixWangLandau::energy_full()
   update->eflag_global = update->ntimestep;
   double total_energy = c_pe->compute_scalar();
 
-  update->ntimestep -= 1;
+  // Revert the thing before
+  update->ntimestep += 1;
   return total_energy;
 }
 
