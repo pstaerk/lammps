@@ -2484,6 +2484,7 @@ double FixWangLandau::energy_full()
   if (conpflag) 
   {
     fixconp->pre_force(0);
+    // fixconp->pre_reverse(eflag, vflag);
   }
 
 
