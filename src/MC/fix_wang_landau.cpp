@@ -2465,7 +2465,7 @@ double FixWangLandau::molecule_energy(tagint gas_molecule_id)
 double FixWangLandau::energy_full()
 {
   // Hack
-  update->ntimestep -= 1;
+  update->ntimestep += 1;
 
   int imolecule;
 
@@ -2481,11 +2481,11 @@ double FixWangLandau::energy_full()
   int vflag = 0;
 
   // Constant Potential Update call
-  if (conpflag) 
-  {
-    fixconp->pre_force(0);
-    // fixconp->pre_reverse(eflag, vflag);
-  }
+  // if (conpflag) 
+  // {
+  //   fixconp->pre_force(0);
+  //   // fixconp->pre_reverse(eflag, vflag);
+  // }
 
 
   // if overlap check requested, if overlap,
@@ -2518,7 +2518,11 @@ double FixWangLandau::energy_full()
     }
     MPI_Allreduce(&overlaptest, &overlaptestall, 1,
                   MPI_INT, MPI_MAX, world);
-    if (overlaptestall) return MAXENERGYSIGNAL;
+    if (overlaptestall) {
+      // Having incremented it before, we should decrement it here again
+      update->ntimestep -= 1;
+      return MAXENERGYSIGNAL;
+    }
   }
 
   // clear forces so they don't accumulate over multiple
@@ -2527,6 +2531,7 @@ double FixWangLandau::energy_full()
   size_t nbytes = sizeof(double) * (atom->nlocal + atom->nghost);
   if (nbytes) memset(&atom->f[0][0],0,3*nbytes);
 
+  // TODO: check if double call is bad
   if (modify->n_pre_force) modify->pre_force(vflag);
 
   if (force->pair) force->pair->compute(eflag,vflag);
@@ -2567,7 +2572,7 @@ double FixWangLandau::energy_full()
   double total_energy = c_pe->compute_scalar();
 
   // Revert the thing before
-  update->ntimestep += 1;
+  update->ntimestep -= 1;
   return total_energy;
 }
 
