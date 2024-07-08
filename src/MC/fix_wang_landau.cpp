@@ -1560,7 +1560,7 @@ void FixWangLandau::attempt_molecule_insertion()
 
   if (insertion_energy_sum < MAXENERGYTEST &&
       random_equal->uniform() < zz*volume*natoms_per_molecule*
-      exp(-wl_factor+beta*insertion_energy_sum)/(ngas + natoms_per_molecule)) {
+      exp(+wl_factor-beta*insertion_energy_sum)/(ngas + natoms_per_molecule)) {
 
     tagint maxmol = 0;
     for (int i = 0; i < atom->nlocal; i++) maxmol = MAX(maxmol,atom->molecule[i]);
